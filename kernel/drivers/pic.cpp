@@ -44,3 +44,37 @@ void PIC::SendEOI(uint8_t irq) {
     }
     outb(PIC1_COMMAND, 0x20);
 }
+
+static inline uint8_t inb(uint16_t port) {
+    uint8_t ret;
+    asm volatile ( "inb %1, %0" : "=a"(ret) : "Nd"(port) );
+    return ret;
+}
+
+void PIC::SetMask(uint8_t irq) {
+    uint16_t port;
+    uint8_t value;
+
+    if(irq < 8) {
+        port = PIC1_DATA;
+    } else {
+        port = PIC2_DATA;
+        irq -= 8;
+    }
+    value = inb(port) | (1 << irq);
+    outb(port, value);
+}
+
+void PIC::ClearMask(uint8_t irq) {
+    uint16_t port;
+    uint8_t value;
+
+    if(irq < 8) {
+        port = PIC1_DATA;
+    } else {
+        port = PIC2_DATA;
+        irq -= 8;
+    }
+    value = inb(port) & ~(1 << irq);
+    outb(port, value);
+}

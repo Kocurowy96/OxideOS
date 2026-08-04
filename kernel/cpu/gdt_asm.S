@@ -7,9 +7,17 @@ gdt_flush:
     movw %ax, %fs
     movw %ax, %gs
     movw %ax, %ss
+    
     pushq $0x08
     lea .flush(%rip), %rax
     pushq %rax
     lretq
+
 .flush:
+    ret
+
+.global tss_flush
+tss_flush:
+    movw $0x28, %ax
+    ltr %ax
     ret

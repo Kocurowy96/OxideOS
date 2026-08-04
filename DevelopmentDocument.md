@@ -78,7 +78,7 @@ Oxidized Screen of Death (OSOD): Zintegrowany ekran błędu jądra (Kernel Panic
 
 5. Graficzny Interfejs Użytkownika (GUI) i Multimedia
 
-Grafika: LFB (Linear Framebuffer) z Limine.
+Grafika: LFB (Linear Framebuffer) z Limine. Natywne wsparcie dla dekodowania i renderowania plików graficznych w formacie `.bmp` (ikony, tła pulpitu).
 
 Dźwięk: Sterownik SoundBlaster 16 lub Intel AC97 (pod QEMU) obsługujący autorskie dźwięki startowe ("startup chime" - surowe pliki PCM wave) i alerty systemowe. (Wskazówka: Pliki dźwiękowe zostaną dostarczone przez twórcę - nagrane ręcznie!).
 

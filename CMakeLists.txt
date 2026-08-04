@@ -28,8 +28,13 @@ set(KERNEL_SOURCES
     kernel/cpu/isr.cpp
     kernel/drivers/pic.cpp
     kernel/drivers/rtc.cpp
+    kernel/drivers/pit.cpp
     kernel/mem/pmm.cpp
     kernel/mem/vmm.cpp
+    kernel/gui/fb.cpp
+    kernel/gui/osod.cpp
+    kernel/fonts/font8x8.cpp
+    kernel/proc/sched.cpp
 )
 
 add_executable(kernel.elf ${KERNEL_SOURCES})

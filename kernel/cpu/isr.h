@@ -7,4 +7,4 @@ struct Registers {
     uint64_t rip, cs, rflags, rsp, ss;
 } __attribute__((packed));
 
-extern "C" void isr_handler(Registers* regs);
+extern "C" Registers* isr_handler(Registers* regs);

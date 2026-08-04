@@ -1295,6 +1295,7 @@ isr_common_stub:
     movq %rsp, %rdi
     cld
     call isr_handler
+    movq %rax, %rsp
     popq %rax
     popq %rbx
     popq %rcx
