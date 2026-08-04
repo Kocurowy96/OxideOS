@@ -18,6 +18,18 @@ set(CMAKE_EXE_LINKER_FLAGS "-nostdlib -static -pie -Wl,--no-dynamic-linker -Wl,-
 enable_language(ASM)
 include_directories(kernel)
 
-file(GLOB_RECURSE KERNEL_SOURCES "kernel/*.cpp" "kernel/*.S")
+set(KERNEL_SOURCES
+    kernel/main.cpp
+    kernel/serial.cpp
+    kernel/cpu/gdt.cpp
+    kernel/cpu/gdt_asm.S
+    kernel/cpu/idt.cpp
+    kernel/cpu/interrupts.S
+    kernel/cpu/isr.cpp
+    kernel/drivers/pic.cpp
+    kernel/drivers/rtc.cpp
+    kernel/mem/pmm.cpp
+    kernel/mem/vmm.cpp
+)
 
 add_executable(kernel.elf ${KERNEL_SOURCES})
