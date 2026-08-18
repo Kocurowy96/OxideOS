@@ -67,7 +67,7 @@ void Syscall::Handler(Registers* regs) {
         win->fb_buffer = (uint32_t*)((uint64_t)phys + hhdm_request.response->offset);
         
         // Map into Userspace
-        uint64_t vaddr = 0x800000000000 + win->id * 0x1000000;
+        uint64_t vaddr = 0x10000000 + win->id * 0x1000000;
         for (size_t i = 0; i < pages; i++) {
             VMM::MapPage((uint64_t)phys + i * 4096, vaddr + i * 4096, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
         }

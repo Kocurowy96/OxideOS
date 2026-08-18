@@ -49,6 +49,11 @@ extern "C" void* memset(void* dest, int val, uint64_t len) {
     return dest;
 }
 
+extern "C" {
+    void* __dso_handle = nullptr;
+    int __cxa_atexit(void (*)(void *), void *, void *) { return 0; }
+}
+
 extern "C" void* memcpy(void* dest, const void* src, uint64_t len) {
     uint64_t* d64 = (uint64_t*)dest;
     const uint64_t* s64 = (const uint64_t*)src;
