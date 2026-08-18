@@ -4,6 +4,10 @@
 #include "../drivers/ac97.h"
 #include "../fs/vfs.h"
 #include "../drivers/rtc.h"
+#include "../mem/pmm.h"
+#include "../limine.h"
+
+extern volatile struct limine_hhdm_request hhdm_request;
 // Helper function from compositor to draw buttons
 void DrawAppButton(int x, int y, int w, int h, const char* text, bool pressed) {
     Framebuffer::DrawRect(x, y, w, h, 0xC0C0C0);
