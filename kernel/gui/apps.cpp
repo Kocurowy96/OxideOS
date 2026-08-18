@@ -265,3 +265,98 @@ void NotepadApp::OnKeyPress(char c) {
         }
     }
 }
+
+// --- Paint App ---
+
+const uint32_t paint_palette[8] = {
+    0x000000, 0xFFFFFF, 0xFF0000, 0x00FF00, 
+    0x0000FF, 0xFFFF00, 0x00FFFF, 0xFF00FF
+};
+
+void PaintApp::OnInit(Window* win) {
+    window = win;
+    current_color = 0; // Czarny
+    for(int y=0; y<32; y++) {
+        for(int x=0; x<32; x++) {
+            canvas[x][y] = 1; // Biały domyślnie
+        }
+    }
+}
+
+void PaintApp::OnPaint(int win_x, int win_y, int width, int height) {
+    Framebuffer::DrawRect(win_x, win_y, width, height, 0x808080); // Tło
+
+    int cell_size = 6;
+    int grid_x = win_x + (width - 32 * cell_size) / 2;
+    int grid_y = win_y + 8;
+    
+    // Obramowanie płótna
+    Framebuffer::DrawRect(grid_x - 2, grid_y - 2, 32 * cell_size + 4, 32 * cell_size + 4, 0x000000);
+    Framebuffer::DrawRect(grid_x - 1, grid_y - 1, 32 * cell_size + 2, 32 * cell_size + 2, 0xFFFFFF);
+    
+    // Rysowanie siatki
+    for(int y=0; y<32; y++) {
+        for(int x=0; x<32; x++) {
+            Framebuffer::DrawRect(grid_x + x * cell_size, grid_y + y * cell_size, cell_size, cell_size, paint_palette[canvas[x][y]]);
+        }
+    }
+    
+    // Rysowanie palety
+    int palette_y = win_y + height - 40;
+    Framebuffer::DrawRect(win_x + 4, palette_y, width - 8, 36, 0xC0C0C0);
+    Framebuffer::DrawRect(win_x + 4, palette_y, width - 8, 2, 0xFFFFFF);
+    Framebuffer::DrawRect(win_x + 4, palette_y, 2, 36, 0xFFFFFF);
+    Framebuffer::DrawRect(win_x + width - 6, palette_y, 2, 36, 0x000000);
+    Framebuffer::DrawRect(win_x + 4, palette_y + 34, width - 8, 2, 0x000000);
+    
+    for(int i=0; i<8; i++) {
+        int px = win_x + 12 + i * 28;
+        int py = palette_y + 8;
+        Framebuffer::DrawRect(px, py, 20, 20, paint_palette[i]);
+        if (current_color == i) {
+            Framebuffer::DrawRect(px-2, py-2, 24, 2, 0x000000);
+            Framebuffer::DrawRect(px-2, py-2, 2, 24, 0x000000);
+            Framebuffer::DrawRect(px+22, py-2, 2, 24, 0x000000);
+            Framebuffer::DrawRect(px-2, py+22, 24, 2, 0x000000);
+        }
+    }
+}
+
+void PaintApp::DrawPixel(int local_x, int local_y) {
+    if (!window) return;
+    int width = window->width;
+    int cell_size = 6;
+    int grid_x = (width - 32 * cell_size) / 2;
+    int grid_y = 8;
+    
+    if (local_x >= grid_x && local_x < grid_x + 32 * cell_size &&
+        local_y >= grid_y && local_y < grid_y + 32 * cell_size) {
+        int cx = (local_x - grid_x) / cell_size;
+        int cy = (local_y - grid_y) / cell_size;
+        if (cx >= 0 && cx < 32 && cy >= 0 && cy < 32) {
+            canvas[cx][cy] = current_color;
+        }
+    }
+}
+
+void PaintApp::OnMouseClick(int local_x, int local_y) {
+    if (!window) return;
+    int height = window->height - 20;
+    int palette_y = height - 40;
+    
+    if (local_y >= palette_y && local_y <= palette_y + 36) {
+        for(int i=0; i<8; i++) {
+            int px = 12 + i * 28;
+            if (local_x >= px && local_x <= px + 20) {
+                current_color = i;
+                break;
+            }
+        }
+    } else {
+        DrawPixel(local_x, local_y);
+    }
+}
+
+void PaintApp::OnMouseMove(int local_x, int local_y) {
+    DrawPixel(local_x, local_y);
+}

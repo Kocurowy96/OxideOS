@@ -27,3 +27,16 @@ private:
     char text_buffer[1024];
     int cursor_pos;
 };
+
+class PaintApp : public Application {
+public:
+    virtual void OnInit(Window* win) override;
+    virtual void OnPaint(int win_x, int win_y, int width, int height) override;
+    virtual void OnMouseClick(int local_x, int local_y) override;
+    virtual void OnMouseMove(int local_x, int local_y) override;
+private:
+    uint8_t canvas[32][32];
+    uint32_t current_color;
+    
+    void DrawPixel(int lx, int ly);
+};

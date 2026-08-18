@@ -195,11 +195,22 @@ void Compositor::Render() {
     }
     
     // Aktualizuj pozycje przesuwanego okna
+    bool any_dragging = false;
     for (int i = 0; i < window_count; i++) {
         Window* win = windows[i];
         if (win->is_dragging) {
             win->x = win->drag_start_win_x + (mouse_x - win->drag_start_x);
             win->y = win->drag_start_win_y + (mouse_y - win->drag_start_y);
+            any_dragging = true;
+        }
+    }
+    
+    // Przekazuj MouseMove
+    if (mouse_left && !any_dragging && window_count > 0 && !start_menu_open) {
+        Window* top_win = windows[window_count - 1];
+        if (top_win->app) {
+            // Sprawdź czy kursor jest wewnątrz okna (lub pozwól na uciekanie, ale wewnątrz app body)
+            top_win->app->OnMouseMove(mouse_x - top_win->x, mouse_y - (top_win->y + titlebar_h));
         }
     }
     
@@ -416,6 +427,18 @@ void Compositor::Render() {
                     bool s_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
                     bool s_pressed = (s_hover && mouse_left);
                     DrawButton(bx, by, bw, bh, sub_items[j], s_pressed);
+                    
+                    if (s_hover && mouse_clicked) {
+                        if (j == 1) { // Paint
+                            Window* win = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) Window(200, 50, 260, 300, "Paint");
+                            PaintApp* app = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) PaintApp();
+                            win->app = app;
+                            app->OnInit(win);
+                            AddWindow(win);
+                            start_menu_open = false;
+                            programs_hovered_persistent = false;
+                        }
+                    }
                 }
             }
         }
