@@ -23,6 +23,12 @@ echo "Compiling apps..."
 gcc -c apps/hello/main.c -o apps/hello/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie
 ld -nostdlib -Ttext 0x400000 apps/hello/main.o -o apps/hello/hello.elf -no-pie
 
+mkdir -p apps/settings
+gcc -c apps/libgui/gui.c -o apps/libgui/gui.o -ffreestanding -O2 -Wall -Wextra -fno-pie
+ar rcs apps/libgui/libgui.a apps/libgui/gui.o
+gcc -c apps/settings/main.c -o apps/settings/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -Iapps/libgui
+ld -nostdlib -Ttext 0x400000 apps/settings/main.o apps/libgui/libgui.a -o apps/settings/settings.elf -no-pie
+
 # Generate disk.img (FAT32)
 if [ ! -f disk.img ]; then
     echo "Generating FAT32 disk image..."
@@ -35,6 +41,7 @@ if [ ! -f disk.img ]; then
 fi
 
 mcopy -o -i disk.img apps/hello/hello.elf ::/HELLO.ELF
+mcopy -o -i disk.img apps/settings/settings.elf ::/SETTINGS.ELF
 
 # Kopiowanie dodatkowych assetów (tła, ikony, dźwięki) na dysk FAT32
 if [ -d assets ]; then

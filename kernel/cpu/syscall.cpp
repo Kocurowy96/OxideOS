@@ -6,6 +6,7 @@
 #include "../mem/pmm.h"
 #include "../mem/vmm.h"
 #include "../limine.h"
+#include "../fs/vfs.h"
 
 void Syscall::Handler(Registers* regs) {
     uint64_t syscall_num = regs->rax;
@@ -23,6 +24,11 @@ void Syscall::Handler(Registers* regs) {
         while(1) {
             asm volatile("hlt");
         }
+    } else if (syscall_num == 3) { // sys_write_file
+        const char* path = (const char*)regs->rdi;
+        const uint8_t* buf = (const uint8_t*)regs->rsi;
+        uint32_t size = (uint32_t)regs->rdx;
+        regs->rax = VFS::WriteFile(path, buf, size) ? 1 : 0;
     } else if (syscall_num == 50) { // sys_create_window
         // rdi: title (const char*), rsi: width, rdx: height, r10: x, r8: y, r9: CreateWindowResult* pointer
         const char* title = (const char*)regs->rdi;

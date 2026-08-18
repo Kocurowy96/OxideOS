@@ -98,8 +98,8 @@ void UserAppTask() {
     uint8_t* buffer = nullptr;
     uint32_t size = 0;
     
-    if (VFS::ReadFile("/HELLO.ELF", &buffer, &size)) {
-        SerialPort::WriteString("UserAppTask: Loaded HELLO.ELF. Jumping to Ring 3...\n");
+    if (VFS::ReadFile("/SETTINGS.ELF", &buffer, &size)) {
+        SerialPort::WriteString("UserAppTask: Loaded SETTINGS.ELF. Jumping to Ring 3...\n");
         uint64_t entry_point = ELF::Load(buffer);
         if (entry_point != 0) {
             // Allocate a user stack
