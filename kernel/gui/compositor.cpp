@@ -308,8 +308,6 @@ void Compositor::Render() {
         
         // Truncate title
         char trunc_title[14]; // Max ~12 chars + ...
-        int title_len = 0;
-        while(win->title[title_len]) title_len++;
         if (title_len > 12) {
             for(int k=0; k<9; k++) trunc_title[k] = win->title[k];
             trunc_title[9] = '.'; trunc_title[10] = '.'; trunc_title[11] = '.'; trunc_title[12] = '\0';
