@@ -65,15 +65,44 @@ void Compositor::RemoveWindow(Window* win) {
     }
 }
 
+Window* Compositor::GetWindowById(int id) {
+    for (int i = 0; i < window_count; i++) {
+        if (windows[i]->id == id) {
+            return windows[i];
+        }
+    }
+    return nullptr;
+}
+
 void Compositor::Init() {
+    char bg_name[32] = "/bg.bmp";
+    uint8_t* cfg_buf = nullptr;
+    uint32_t cfg_size = 0;
+    
+    // Próba wczytania konfiguracji tapety
+    if (VFS::ReadFile("/DOCS/CONFIG.DAT", &cfg_buf, &cfg_size)) {
+        if (cfg_size > 0 && cfg_size < 32) {
+            for (uint32_t i = 0; i < cfg_size; i++) {
+                bg_name[i] = (char)cfg_buf[i];
+            }
+            bg_name[cfg_size] = '\0';
+        }
+    }
+    
     uint8_t* buffer = nullptr;
     uint32_t size = 0;
     
-    if (VFS::ReadFile("/bg.bmp", &buffer, &size)) {
+    if (VFS::ReadFile(bg_name, &buffer, &size)) {
         bg_bmp = buffer;
-        SerialPort::WriteString("Compositor: Loaded bg.bmp from VFS!\n");
+        SerialPort::WriteString("Compositor: Loaded configured wallpaper!\n");
     } else {
-        SerialPort::WriteString("Compositor: Failed to load bg.bmp from VFS.\n");
+        // Fallback
+        if (VFS::ReadFile("/bg.bmp", &buffer, &size)) {
+            bg_bmp = buffer;
+            SerialPort::WriteString("Compositor: Loaded default bg.bmp\n");
+        } else {
+            SerialPort::WriteString("Compositor: Failed to load any wallpaper.\n");
+        }
     }
 
     buffer = nullptr;
@@ -91,6 +120,12 @@ void Compositor::HandleKeyPress(char c) {
         Window* top_win = windows[window_count - 1];
         if (top_win && top_win->app) {
             top_win->app->OnKeyPress(c);
+        } else if (top_win && top_win->fb_buffer) {
+            Window::Event ev;
+            ev.type = 2; // KeyPress
+            ev.key = c;
+            ev.x = 0; ev.y = 0;
+            top_win->PushEvent(ev);
         }
     }
 }
@@ -197,6 +232,13 @@ void Compositor::Render() {
                 mouse_y >= win->y + titlebar_h && mouse_y <= win->y + win->height) {
                 if (win->app) {
                     win->app->OnMouseClick(mouse_x - win->x, mouse_y - (win->y + titlebar_h));
+                } else if (win->fb_buffer) {
+                    Window::Event ev;
+                    ev.type = 1; // MouseClick
+                    ev.x = mouse_x - (win->x + 2);
+                    ev.y = mouse_y - (win->y + titlebar_h);
+                    ev.key = 0;
+                    win->PushEvent(ev);
                 }
                 // Aktywuj okno (na górę)
                 for (int j = i; j < window_count - 1; j++) {
@@ -262,8 +304,20 @@ void Compositor::Render() {
         Framebuffer::DrawString("X", close_x + 3, close_y + 3, 0x000000, 0xC0C0C0);
         
         // Rysuj zawartość Aplikacji
+        int content_x = win->x + 2;
+        int content_y = win->y + titlebar_h;
+        int content_w = win->width - 4;
+        int content_h = win->height - titlebar_h - 2;
+        
         if (win->app) {
             win->app->OnPaint(win->x, win->y + titlebar_h, win->width, win->height - titlebar_h);
+        } else if (win->fb_buffer) {
+            // Rysowanie z Pamięci Dzielonej
+            for (int r = 0; r < content_h; r++) {
+                for (int c = 0; c < content_w; c++) {
+                    Framebuffer::PutPixel(content_x + c, content_y + r, win->fb_buffer[r * content_w + c]);
+                }
+            }
         }
     }
     

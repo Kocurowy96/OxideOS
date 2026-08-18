@@ -12,6 +12,7 @@ public:
     // Zarządzanie oknami
     static bool AddWindow(Window* win);
     static void RemoveWindow(Window* win);
+    static Window* GetWindowById(int id);
     
     static void HandleKeyPress(char c);
     

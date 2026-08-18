@@ -75,6 +75,30 @@ with open('icon.bmp', 'wb') as f:
                 f.write(b'\x00\x00\xff') # red (BGR)
 "
 mcopy -o -i disk.img icon.bmp ::/icon.bmp
+mcopy -o -i disk.img iso_root/bg.bmp ::/bg1.bmp
+
+# Generate bg2.bmp (zielone tło)
+python3 -c "
+with open('bg2.bmp', 'wb') as f:
+    f.write(b'BM')
+    f.write((1024*768*3 + 54).to_bytes(4, 'little'))
+    f.write((0).to_bytes(4, 'little'))
+    f.write((54).to_bytes(4, 'little'))
+    f.write((40).to_bytes(4, 'little'))
+    f.write((1024).to_bytes(4, 'little'))
+    f.write((768).to_bytes(4, 'little'))
+    f.write((1).to_bytes(2, 'little'))
+    f.write((24).to_bytes(2, 'little'))
+    f.write((0).to_bytes(4, 'little'))
+    f.write((1024*768*3).to_bytes(4, 'little'))
+    f.write((0).to_bytes(4, 'little'))
+    f.write((0).to_bytes(4, 'little'))
+    f.write((0).to_bytes(4, 'little'))
+    f.write((0).to_bytes(4, 'little'))
+    for _ in range(1024*768):
+        f.write(b'\x00\x80\x00') # green (BGR)
+"
+mcopy -o -i disk.img bg2.bmp ::/bg2.bmp
 
 # Generate ISO using xorriso
 xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
