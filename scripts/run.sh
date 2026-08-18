@@ -20,13 +20,13 @@ cp build/kernel.elf iso_root/boot/
 
 # Compile Apps
 echo "Compiling apps..."
-gcc -c apps/hello/main.c -o apps/hello/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie
+gcc -c apps/hello/main.c -o apps/hello/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector
 ld -nostdlib -Ttext 0x400000 apps/hello/main.o -o apps/hello/hello.elf -no-pie
 
 mkdir -p apps/settings
-gcc -c apps/libgui/gui.c -o apps/libgui/gui.o -ffreestanding -O2 -Wall -Wextra -fno-pie
+gcc -c apps/libgui/gui.c -o apps/libgui/gui.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector
 ar rcs apps/libgui/libgui.a apps/libgui/gui.o
-gcc -c apps/settings/main.c -o apps/settings/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -Iapps/libgui
+gcc -c apps/settings/main.c -o apps/settings/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -Iapps/libgui
 ld -nostdlib -Ttext 0x400000 apps/settings/main.o apps/libgui/libgui.a -o apps/settings/settings.elf -no-pie
 
 # Generate disk.img (FAT32)
