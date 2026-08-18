@@ -393,3 +393,175 @@ void PaintApp::OnMouseClick(int local_x, int local_y) {
 void PaintApp::OnMouseMove(int local_x, int local_y) {
     DrawPixel(local_x, local_y);
 }
+
+// --- Calendar App ---
+
+static int BcdToBin(uint8_t bcd) {
+    return ((bcd >> 4) * 10) + (bcd & 0x0F);
+}
+
+int CalendarApp::GetDaysInMonth(int m, int y) {
+    if (m == 2) {
+        if ((y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)) return 29;
+        return 28;
+    }
+    if (m == 4 || m == 6 || m == 9 || m == 11) return 30;
+    return 31;
+}
+
+int CalendarApp::GetDayOfWeek(int d, int m, int y) {
+    if (m < 3) {
+        m += 12;
+        y -= 1;
+    }
+    int K = y % 100;
+    int J = y / 100;
+    int h = (d + (13 * (m + 1)) / 5 + K + (K / 4) + (J / 4) - 2 * J) % 7;
+    return (h + 5) % 7; 
+}
+
+void CalendarApp::OnInit(Window* win) {
+    window = win;
+    current_year = 2000 + BcdToBin(RTC::GetYear());
+    current_month = BcdToBin(RTC::GetMonth());
+    selected_day = BcdToBin(RTC::GetDay());
+    if(current_month < 1 || current_month > 12) current_month = 1;
+    if(selected_day < 1 || selected_day > 31) selected_day = 1;
+    
+    cursor_pos = 0;
+    for(int i=0; i<31; i++) {
+        notes[i][0] = '\0';
+    }
+}
+
+void CalendarApp::OnPaint(int win_x, int win_y, int width, int height) {
+    Framebuffer::DrawRect(win_x, win_y, width, height, 0xFFFFFF); // Tło
+    
+    // Top banner
+    Framebuffer::DrawRect(win_x, win_y, width, 30, 0x000080);
+    Framebuffer::DrawRect(win_x + 5, win_y + 5, 20, 20, 0xC0C0C0);
+    Framebuffer::DrawString("<", win_x + 11, win_y + 11, 0x000000, 0xC0C0C0);
+    
+    Framebuffer::DrawRect(win_x + width - 25, win_y + 5, 20, 20, 0xC0C0C0);
+    Framebuffer::DrawString(">", win_x + width - 19, win_y + 11, 0x000000, 0xC0C0C0);
+    
+    char m_str[16];
+    char y_str[16];
+    IntToString(current_month, m_str);
+    IntToString(current_year, y_str);
+    
+    Framebuffer::DrawString("Miesiac:", win_x + 35, win_y + 11, 0xFFFFFF, 0x000080);
+    Framebuffer::DrawString(m_str, win_x + 105, win_y + 11, 0xFFFFFF, 0x000080);
+    Framebuffer::DrawString("Rok:", win_x + 135, win_y + 11, 0xFFFFFF, 0x000080);
+    Framebuffer::DrawString(y_str, win_x + 175, win_y + 11, 0xFFFFFF, 0x000080);
+    
+    // Siatka
+    int start_day = GetDayOfWeek(1, current_month, current_year);
+    int days = GetDaysInMonth(current_month, current_year);
+    
+    int cell_w = 30;
+    int cell_h = 20;
+    int grid_x = win_x + (width - 7 * cell_w) / 2;
+    int grid_y = win_y + 50;
+    
+    for (int i = 0; i < days; i++) {
+        int col = (start_day + i) % 7;
+        int row = (start_day + i) / 7;
+        
+        int px = grid_x + col * cell_w;
+        int py = grid_y + row * cell_h;
+        
+        uint32_t bg = (i + 1 == selected_day) ? 0x808080 : 0xC0C0C0;
+        Framebuffer::DrawRect(px, py, cell_w - 2, cell_h - 2, bg);
+        
+        char d_str[16];
+        IntToString(i + 1, d_str);
+        Framebuffer::DrawString(d_str, px + 2, py + 4, 0x000000, bg);
+    }
+    
+    // Planner
+    int planner_y = grid_y + 6 * cell_h + 10;
+    int planner_h = height - (planner_y - win_y) - 5;
+    Framebuffer::DrawRect(win_x + 5, planner_y, width - 10, planner_h, 0xFFFFCC); 
+    
+    if (selected_day >= 1 && selected_day <= 31) {
+        char* note = notes[selected_day - 1];
+        int cx = win_x + 10;
+        int cy = planner_y + 10;
+        for (int i = 0; note[i] != '\0'; i++) {
+            if (note[i] == '\n') {
+                cx = win_x + 10;
+                cy += 16;
+            } else {
+                char str[2] = {note[i], 0};
+                Framebuffer::DrawString(str, cx, cy, 0x000000, 0xFFFFCC);
+                cx += 8;
+            }
+        }
+        Framebuffer::DrawRect(cx, cy, 8, 16, 0x000000); 
+    }
+}
+
+void CalendarApp::OnMouseClick(int local_x, int local_y) {
+    if (!window) return;
+    if (local_y >= 5 && local_y <= 25) {
+        if (local_x >= 5 && local_x <= 25) {
+            current_month--;
+            if (current_month < 1) { current_month = 12; current_year--; }
+            selected_day = 1;
+            cursor_pos = 0;
+            while(notes[selected_day-1][cursor_pos]) cursor_pos++;
+        }
+        if (local_x >= window->width - 25 && local_x <= window->width - 5) {
+            current_month++;
+            if (current_month > 12) { current_month = 1; current_year++; }
+            selected_day = 1;
+            cursor_pos = 0;
+            while(notes[selected_day-1][cursor_pos]) cursor_pos++;
+        }
+    }
+    
+    int cell_w = 30;
+    int cell_h = 20;
+    int grid_x = (window->width - 7 * cell_w) / 2;
+    int grid_y = 50;
+    
+    int start_day = GetDayOfWeek(1, current_month, current_year);
+    int days = GetDaysInMonth(current_month, current_year);
+    
+    for (int i = 0; i < days; i++) {
+        int col = (start_day + i) % 7;
+        int row = (start_day + i) / 7;
+        int px = grid_x + col * cell_w;
+        int py = grid_y + row * cell_h;
+        
+        if (local_x >= px && local_x <= px + cell_w - 2 &&
+            local_y >= py && local_y <= py + cell_h - 2) {
+            selected_day = i + 1;
+            cursor_pos = 0;
+            while(notes[selected_day-1][cursor_pos]) cursor_pos++;
+        }
+    }
+}
+
+void CalendarApp::OnKeyPress(char c) {
+    if (selected_day < 1 || selected_day > 31) return;
+    char* note = notes[selected_day - 1];
+    
+    if (c == '\b') {
+        if (cursor_pos > 0) {
+            cursor_pos--;
+            note[cursor_pos] = 0;
+        }
+    } else if (c == '\n') {
+        if (cursor_pos < 127) {
+            note[cursor_pos++] = '\n';
+            note[cursor_pos] = 0;
+        }
+    } else if (c >= 32 && c <= 126) {
+        if (cursor_pos < 127) {
+            note[cursor_pos++] = c;
+            note[cursor_pos] = 0;
+        }
+    }
+}

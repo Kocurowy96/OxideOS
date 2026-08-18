@@ -417,7 +417,7 @@ void Compositor::Render() {
                 Framebuffer::DrawRect(sub_x + sub_w - 2, sub_y, 2, sub_h, 0x000000);
                 Framebuffer::DrawRect(sub_x, sub_y + sub_h - 2, sub_w, 2, 0x000000);
                 
-                const char* sub_items[] = { "Saper", "Paint" };
+                const char* sub_items[] = { "Kalendarz", "Paint" };
                 for (int j = 0; j < 2; j++) {
                     int bx = sub_x + 4;
                     int by = sub_y + 4 + j * 26;
@@ -429,7 +429,15 @@ void Compositor::Render() {
                     DrawButton(bx, by, bw, bh, sub_items[j], s_pressed);
                     
                     if (s_hover && mouse_clicked) {
-                        if (j == 1) { // Paint
+                        if (j == 0) { // Kalendarz
+                            Window* win = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) Window(250, 80, 260, 360, "Kalendarz");
+                            CalendarApp* app = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) CalendarApp();
+                            win->app = app;
+                            app->OnInit(win);
+                            AddWindow(win);
+                            start_menu_open = false;
+                            programs_hovered_persistent = false;
+                        } else if (j == 1) { // Paint
                             Window* win = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) Window(200, 50, 260, 300, "Paint");
                             PaintApp* app = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) PaintApp();
                             win->app = app;

@@ -40,3 +40,21 @@ private:
     
     void DrawPixel(int lx, int ly);
 };
+
+class CalendarApp : public Application {
+public:
+    virtual void OnInit(Window* win) override;
+    virtual void OnPaint(int win_x, int win_y, int width, int height) override;
+    virtual void OnMouseClick(int local_x, int local_y) override;
+    virtual void OnKeyPress(char c) override;
+private:
+    int current_month;
+    int current_year;
+    int selected_day;
+    
+    char notes[31][128];
+    int cursor_pos;
+    
+    int GetDaysInMonth(int m, int y);
+    int GetDayOfWeek(int d, int m, int y);
+};

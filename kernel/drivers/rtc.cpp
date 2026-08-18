@@ -46,3 +46,15 @@ uint8_t RTC::GetHour() {
 uint8_t RTC::GetMinute() {
     return ReadRegister(0x02);
 }
+
+uint8_t RTC::GetDay() {
+    return ReadRegister(0x07);
+}
+
+uint8_t RTC::GetMonth() {
+    return ReadRegister(0x08);
+}
+
+uint8_t RTC::GetYear() {
+    return ReadRegister(0x09);
+}
