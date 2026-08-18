@@ -29,6 +29,10 @@ dd if=/dev/zero of=disk.img bs=1M count=32 status=none
 mkfs.fat -F 32 disk.img > /dev/null
 mcopy -i disk.img apps/hello/hello.elf ::/HELLO.ELF
 
+# Tworzenie struktury katalogów
+mmd -i disk.img ::/DOCS
+mmd -i disk.img ::/PICS
+
 # Kopiowanie dodatkowych assetów (tła, ikony, dźwięki) na dysk FAT32
 if [ -d assets ]; then
     for file in assets/*; do

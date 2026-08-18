@@ -337,6 +337,10 @@ void PaintApp::OnPaint(int win_x, int win_y, int width, int height) {
     // CZYŚĆ
     Framebuffer::DrawRect(win_x + 80, btn_py, 70, 20, 0x808080);
     Framebuffer::DrawString("CZYSC", win_x + 84, btn_py + 4, 0x000000, 0x808080);
+    
+    // ZAPISZ
+    Framebuffer::DrawRect(win_x + 160, btn_py, 70, 20, 0x808080);
+    Framebuffer::DrawString("ZAPISZ", win_x + 164, btn_py + 4, 0x000000, 0x808080);
 }
 
 void PaintApp::DrawPixel(int local_x, int local_y) {
@@ -382,6 +386,33 @@ void PaintApp::OnMouseClick(int local_x, int local_y) {
                     for(int x=0; x<32; x++) {
                         canvas[x][y] = 1;
                     }
+                }
+            } else if (local_x >= 160 && local_x <= 230) {
+                // ZAPISZ
+                // Generowanie pliku BMP (naglowek 54 bajty + piksele)
+                int bmp_size = 54 + 32 * 32 * 3;
+                uint8_t* bmp = (uint8_t*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset);
+                if (bmp) {
+                    for (int i=0; i<bmp_size; i++) bmp[i] = 0;
+                    bmp[0] = 'B'; bmp[1] = 'M';
+                    *(uint32_t*)&bmp[2] = bmp_size;
+                    *(uint32_t*)&bmp[10] = 54;
+                    *(uint32_t*)&bmp[14] = 40;
+                    *(uint32_t*)&bmp[18] = 32;
+                    *(uint32_t*)&bmp[22] = 32;
+                    *(uint16_t*)&bmp[26] = 1;
+                    *(uint16_t*)&bmp[28] = 24;
+                    
+                    int idx = 54;
+                    for (int y=31; y>=0; y--) {
+                        for (int x=0; x<32; x++) {
+                            uint32_t col = paint_palette[canvas[x][y]];
+                            bmp[idx++] = col & 0xFF; // B
+                            bmp[idx++] = (col >> 8) & 0xFF; // G
+                            bmp[idx++] = (col >> 16) & 0xFF; // R
+                        }
+                    }
+                    VFS::WriteFile("PICS/DRAW.BMP", bmp, bmp_size);
                 }
             }
         }
@@ -430,8 +461,20 @@ void CalendarApp::OnInit(Window* win) {
     
     cursor_pos = 0;
     for(int i=0; i<31; i++) {
-        notes[i][0] = '\0';
+        for(int j=0; j<128; j++) notes[i][j] = '\0';
     }
+    
+    uint8_t* buf = nullptr;
+    uint32_t size = 0;
+    if (VFS::ReadFile("DOCS/NOTES.DAT", &buf, &size) && buf && size == sizeof(notes)) {
+        for(int i=0; i<31; i++) {
+            for(int j=0; j<128; j++) notes[i][j] = buf[i*128 + j];
+        }
+    }
+}
+
+void CalendarApp::SaveNotes() {
+    VFS::WriteFile("DOCS/NOTES.DAT", (const uint8_t*)notes, sizeof(notes));
 }
 
 void CalendarApp::OnPaint(int win_x, int win_y, int width, int height) {
@@ -552,16 +595,19 @@ void CalendarApp::OnKeyPress(char c) {
         if (cursor_pos > 0) {
             cursor_pos--;
             note[cursor_pos] = 0;
+            SaveNotes();
         }
     } else if (c == '\n') {
         if (cursor_pos < 127) {
             note[cursor_pos++] = '\n';
             note[cursor_pos] = 0;
+            SaveNotes();
         }
     } else if (c >= 32 && c <= 126) {
         if (cursor_pos < 127) {
             note[cursor_pos++] = c;
             note[cursor_pos] = 0;
+            SaveNotes();
         }
     }
 }

@@ -57,4 +57,5 @@ private:
     
     int GetDaysInMonth(int m, int y);
     int GetDayOfWeek(int d, int m, int y);
+    void SaveNotes();
 };

@@ -14,3 +14,11 @@ bool VFS::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size) {
     
     return FAT32::ReadFile(path, out_buffer, out_size);
 }
+
+bool VFS::WriteFile(const char* path, const uint8_t* buffer, uint32_t size) {
+    if (path[0] == '/') {
+        path++;
+    }
+    
+    return FAT32::WriteFile(path, buffer, size);
+}

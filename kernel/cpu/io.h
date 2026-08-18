@@ -43,3 +43,7 @@ static inline uint32_t inl(uint16_t port) {
 static inline void insw(uint16_t port, void* addr, uint32_t count) {
     asm volatile ("rep insw" : "+D"(addr), "+c"(count) : "d"(port) : "memory");
 }
+
+static inline void outsw(uint16_t port, const void* addr, uint32_t count) {
+    asm volatile ("rep outsw" : "+S"(addr), "+c"(count) : "d"(port) : "memory");
+}
