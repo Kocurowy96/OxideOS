@@ -17,6 +17,7 @@ public:
     
 private:
     static Window* windows[MAX_WINDOWS];
+    static Window* taskbar_windows[MAX_WINDOWS];
     static int window_count;
 
     static void* icon_bmp;

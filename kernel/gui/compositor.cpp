@@ -22,11 +22,14 @@ static void* bg_bmp = nullptr;
 void* Compositor::icon_bmp = nullptr;
 
 Window* Compositor::windows[MAX_WINDOWS];
+Window* Compositor::taskbar_windows[MAX_WINDOWS];
 int Compositor::window_count = 0;
 
 bool Compositor::AddWindow(Window* win) {
     if (window_count >= MAX_WINDOWS) return false;
-    windows[window_count++] = win;
+    windows[window_count] = win;
+    taskbar_windows[window_count] = win;
+    window_count++;
     return true;
 }
 
@@ -42,6 +45,22 @@ void Compositor::RemoveWindow(Window* win) {
         for (int i = index; i < window_count - 1; i++) {
             windows[i] = windows[i + 1];
         }
+    }
+    
+    int tb_index = -1;
+    for (int i = 0; i < window_count; i++) {
+        if (taskbar_windows[i] == win) {
+            tb_index = i;
+            break;
+        }
+    }
+    if (tb_index != -1) {
+        for (int i = tb_index; i < window_count - 1; i++) {
+            taskbar_windows[i] = taskbar_windows[i + 1];
+        }
+    }
+    
+    if (index != -1 && tb_index != -1) {
         window_count--;
     }
 }
@@ -247,27 +266,36 @@ void Compositor::Render() {
     // Rysowanie otwartych okien na pasku
     int tb_x = btn_w + 4;
     for (int i = 0; i < window_count; i++) {
+        Window* win = taskbar_windows[i];
         int title_len = 0;
-        while(windows[i]->title[title_len]) title_len++;
+        while(win->title[title_len]) title_len++;
         int w_btn_w = title_len * 8 + 16;
         
         if (tb_x + w_btn_w > (int)screen_w - 60) break; // Brak miejsca (zostawiamy na zegarek)
         
-        bool is_top = (i == window_count - 1); // Aktywne okno (na wierzchu)
+        bool is_top = (window_count > 0 && windows[window_count - 1] == win); // Aktywne okno (na wierzchu)
         
         // Check hover/click na taskbarze
         bool is_hover = (mouse_x >= tb_x && mouse_x <= tb_x + w_btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h);
         if (is_hover && mouse_clicked && !start_menu_open) {
-            // Przenieś to okno na samą górę
-            Window* win = windows[i];
-            for (int j = i; j < window_count - 1; j++) {
-                windows[j] = windows[j + 1];
+            // Przenieś to okno na samą górę w 'windows' (Z-Order)
+            int z_index = -1;
+            for (int j = 0; j < window_count; j++) {
+                if (windows[j] == win) {
+                    z_index = j;
+                    break;
+                }
             }
-            windows[window_count - 1] = win;
+            if (z_index != -1) {
+                for (int j = z_index; j < window_count - 1; j++) {
+                    windows[j] = windows[j + 1];
+                }
+                windows[window_count - 1] = win;
+            }
             is_top = true;
         }
         
-        DrawButton(tb_x, btn_y, w_btn_w, btn_h, windows[i]->title, is_top);
+        DrawButton(tb_x, btn_y, w_btn_w, btn_h, win->title, is_top);
         tb_x += w_btn_w + 2;
     }
     
