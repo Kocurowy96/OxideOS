@@ -58,6 +58,25 @@ static void IntToString(int val, char* buf) {
     buf[dpos] = '\0';
 }
 
+// --- Welcome App ---
+void WelcomeApp::OnInit(Window* win) {
+    window = win;
+}
+
+void WelcomeApp::OnPaint(int win_x, int win_y, int width, int height) {
+    Framebuffer::DrawRect(win_x, win_y, width, height, 0xFFFFFF); // Tło białe
+    
+    Framebuffer::DrawString("Witaj w OxideOS!", win_x + 10, win_y + 10, 0x000000, 0xFFFFFF);
+    Framebuffer::DrawString("Wersja kernela: 1.0 (Ring 3)", win_x + 10, win_y + 30, 0x000080, 0xFFFFFF);
+    
+    Framebuffer::DrawString("Nowosci:", win_x + 10, win_y + 60, 0x000000, 0xFFFFFF);
+    Framebuffer::DrawString("- Aplikacje w trybie Userspace", win_x + 20, win_y + 80, 0x000000, 0xFFFFFF);
+    Framebuffer::DrawString("- Aplikacja Ustawien w menu start", win_x + 20, win_y + 100, 0x000000, 0xFFFFFF);
+    Framebuffer::DrawString("- Dzwiek AC97", win_x + 20, win_y + 120, 0x000000, 0xFFFFFF);
+    
+    Framebuffer::DrawString("Milego korzystania ze swiezego systemu!", win_x + 10, win_y + 160, 0x008000, 0xFFFFFF);
+}
+
 // --- Calculator App ---
 
 void CalculatorApp::OnInit(Window* win) {

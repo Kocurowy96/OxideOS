@@ -40,6 +40,7 @@ static void print_uint64(uint64_t val) {
 
 #include "gui/compositor.h"
 #include "gui/osod.h"
+#include "gui/apps.h"
 
 extern "C" void* memset(void* dest, int val, uint64_t len) {
     uint8_t* ptr = (uint8_t*)dest;
@@ -78,6 +79,9 @@ void DesktopTask() {
     Compositor::Init();
     
     static Window test_win(150, 150, 400, 250, "Witaj w OxideOS!");
+    static WelcomeApp welcome_app;
+    test_win.app = &welcome_app;
+    welcome_app.OnInit(&test_win);
     Compositor::AddWindow(&test_win);
     
     uint8_t* wav_buffer = nullptr;
