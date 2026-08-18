@@ -2,7 +2,7 @@
 #include "fb.h"
 #include "../serial.h"
 
-void BMP::Draw(void* bmp_data, uint32_t x, uint32_t y) {
+void BMP::Draw(void* bmp_data, int32_t x, int32_t y) {
     if (!bmp_data) return;
     
     BMPHeader* header = (BMPHeader*)bmp_data;

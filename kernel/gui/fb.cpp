@@ -63,8 +63,8 @@ void Framebuffer::DrawRect(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_
     
     int32_t start_x = x < 0 ? 0 : x;
     int32_t start_y = y < 0 ? 0 : y;
-    int32_t end_x = x + w > fb->width ? fb->width : x + w;
-    int32_t end_y = y + h > fb->height ? fb->height : y + h;
+    int32_t end_x = x + (int32_t)w > (int32_t)fb->width ? (int32_t)fb->width : x + (int32_t)w;
+    int32_t end_y = y + (int32_t)h > (int32_t)fb->height ? (int32_t)fb->height : y + (int32_t)h;
     
     uint32_t draw_w = end_x - start_x;
     uint32_t draw_h = end_y - start_y;
