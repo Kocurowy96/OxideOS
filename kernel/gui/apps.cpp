@@ -301,17 +301,18 @@ void PaintApp::OnPaint(int win_x, int win_y, int width, int height) {
         }
     }
     
-    // Rysowanie palety
-    int palette_y = win_y + height - 40;
-    Framebuffer::DrawRect(win_x + 4, palette_y, width - 8, 36, 0xC0C0C0);
+    // Rysowanie panelu narzędzi (60 px wysokości)
+    int palette_y = win_y + height - 60;
+    Framebuffer::DrawRect(win_x + 4, palette_y, width - 8, 56, 0xC0C0C0);
     Framebuffer::DrawRect(win_x + 4, palette_y, width - 8, 2, 0xFFFFFF);
-    Framebuffer::DrawRect(win_x + 4, palette_y, 2, 36, 0xFFFFFF);
-    Framebuffer::DrawRect(win_x + width - 6, palette_y, 2, 36, 0x000000);
-    Framebuffer::DrawRect(win_x + 4, palette_y + 34, width - 8, 2, 0x000000);
+    Framebuffer::DrawRect(win_x + 4, palette_y, 2, 56, 0xFFFFFF);
+    Framebuffer::DrawRect(win_x + width - 6, palette_y, 2, 56, 0x000000);
+    Framebuffer::DrawRect(win_x + 4, palette_y + 54, width - 8, 2, 0x000000);
     
+    // Paleta barw (pierwszy rząd)
     for(int i=0; i<8; i++) {
         int px = win_x + 12 + i * 28;
-        int py = palette_y + 8;
+        int py = palette_y + 6;
         Framebuffer::DrawRect(px, py, 20, 20, paint_palette[i]);
         if (current_color == i) {
             Framebuffer::DrawRect(px-2, py-2, 24, 2, 0x000000);
@@ -320,6 +321,22 @@ void PaintApp::OnPaint(int win_x, int win_y, int width, int height) {
             Framebuffer::DrawRect(px-2, py+22, 24, 2, 0x000000);
         }
     }
+    
+    // Rysowanie przycisków
+    int btn_py = palette_y + 32;
+    // Gumka (traktowana jako kolor 1, ale z UI ułatwieniem)
+    Framebuffer::DrawRect(win_x + 12, btn_py, 60, 20, 0x808080); // Cień dla wklęsłości by wyglądało jak przycisk narzędziowy
+    Framebuffer::DrawString("GUMKA", win_x + 16, btn_py + 4, 0x000000, 0x808080);
+    if (current_color == 1) { // Podświetl jeśli wybrana gumka (biały)
+        Framebuffer::DrawRect(win_x + 10, btn_py - 2, 64, 2, 0x000000);
+        Framebuffer::DrawRect(win_x + 10, btn_py - 2, 2, 24, 0x000000);
+        Framebuffer::DrawRect(win_x + 72, btn_py - 2, 2, 24, 0x000000);
+        Framebuffer::DrawRect(win_x + 10, btn_py + 20, 64, 2, 0x000000);
+    }
+    
+    // CZYŚĆ
+    Framebuffer::DrawRect(win_x + 80, btn_py, 70, 20, 0x808080);
+    Framebuffer::DrawString("CZYSC", win_x + 84, btn_py + 4, 0x000000, 0x808080);
 }
 
 void PaintApp::DrawPixel(int local_x, int local_y) {
@@ -342,14 +359,30 @@ void PaintApp::DrawPixel(int local_x, int local_y) {
 void PaintApp::OnMouseClick(int local_x, int local_y) {
     if (!window) return;
     int height = window->height - 20;
-    int palette_y = height - 40;
+    int palette_y = height - 60;
     
-    if (local_y >= palette_y && local_y <= palette_y + 36) {
-        for(int i=0; i<8; i++) {
-            int px = 12 + i * 28;
-            if (local_x >= px && local_x <= px + 20) {
-                current_color = i;
-                break;
+    if (local_y >= palette_y && local_y <= palette_y + 56) {
+        if (local_y <= palette_y + 28) {
+            // Pierwszy rząd - Kolory
+            for(int i=0; i<8; i++) {
+                int px = 12 + i * 28;
+                if (local_x >= px && local_x <= px + 20) {
+                    current_color = i;
+                    break;
+                }
+            }
+        } else {
+            // Drugi rząd - Przyciski (od y = palette_y + 32 do y = palette_y + 52)
+            if (local_x >= 12 && local_x <= 72) {
+                // GUMKA
+                current_color = 1; // Biały
+            } else if (local_x >= 80 && local_x <= 150) {
+                // CZYŚĆ
+                for(int y=0; y<32; y++) {
+                    for(int x=0; x<32; x++) {
+                        canvas[x][y] = 1;
+                    }
+                }
             }
         }
     } else {
