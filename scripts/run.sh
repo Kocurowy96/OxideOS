@@ -24,26 +24,29 @@ gcc -c apps/hello/main.c -o apps/hello/main.o -ffreestanding -O2 -Wall -Wextra -
 ld -nostdlib -Ttext 0x400000 apps/hello/main.o -o apps/hello/hello.elf -no-pie
 
 # Generate disk.img (FAT32)
-echo "Generating FAT32 disk image..."
-dd if=/dev/zero of=disk.img bs=1M count=32 status=none
-mkfs.fat -F 32 disk.img > /dev/null
-mcopy -i disk.img apps/hello/hello.elf ::/HELLO.ELF
+if [ ! -f disk.img ]; then
+    echo "Generating FAT32 disk image..."
+    dd if=/dev/zero of=disk.img bs=1M count=32 status=none
+    mkfs.fat -F 32 disk.img > /dev/null
+    
+    # Tworzenie struktury katalogów
+    mmd -i disk.img ::/DOCS
+    mmd -i disk.img ::/PICS
+fi
 
-# Tworzenie struktury katalogów
-mmd -i disk.img ::/DOCS
-mmd -i disk.img ::/PICS
+mcopy -o -i disk.img apps/hello/hello.elf ::/HELLO.ELF
 
 # Kopiowanie dodatkowych assetów (tła, ikony, dźwięki) na dysk FAT32
 if [ -d assets ]; then
     for file in assets/*; do
         if [ -f "$file" ]; then
-            mcopy -i disk.img "$file" "::/$(basename "$file")"
+            mcopy -o -i disk.img "$file" "::/$(basename "$file")"
         fi
     done
 fi
 
 if [ -f iso_root/bg.bmp ]; then
-    mcopy -i disk.img iso_root/bg.bmp ::/bg.bmp
+    mcopy -o -i disk.img iso_root/bg.bmp ::/bg.bmp
 fi
 
 # Generate 16x16 icon.bmp
