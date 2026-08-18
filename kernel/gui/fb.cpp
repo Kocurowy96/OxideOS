@@ -29,8 +29,8 @@ void Framebuffer::Init() {
 uint32_t Framebuffer::GetWidth() { return fb ? fb->width : 0; }
 uint32_t Framebuffer::GetHeight() { return fb ? fb->height : 0; }
 
-void Framebuffer::PutPixel(uint32_t x, uint32_t y, uint32_t color) {
-    if (!fb || x >= fb->width || y >= fb->height) return;
+void Framebuffer::PutPixel(int32_t x, int32_t y, uint32_t color) {
+    if (!fb || x < 0 || y < 0 || (uint32_t)x >= fb->width || (uint32_t)y >= fb->height) return;
     if (backbuffer) {
         backbuffer[y * fb->width + x] = color;
     } else {
@@ -54,23 +54,32 @@ void Framebuffer::SwapBuffers() {
     }
 }
 
-void Framebuffer::DrawRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color) {
+void Framebuffer::DrawRect(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t color) {
     if (!fb) return;
-    if (x >= fb->width || y >= fb->height) return;
-    if (x + w > fb->width) w = fb->width - x;
-    if (y + h > fb->height) h = fb->height - y;
+    
+    // Clipping
+    if (x >= (int32_t)fb->width || y >= (int32_t)fb->height) return;
+    if (x + (int32_t)w <= 0 || y + (int32_t)h <= 0) return;
+    
+    int32_t start_x = x < 0 ? 0 : x;
+    int32_t start_y = y < 0 ? 0 : y;
+    int32_t end_x = x + w > fb->width ? fb->width : x + w;
+    int32_t end_y = y + h > fb->height ? fb->height : y + h;
+    
+    uint32_t draw_w = end_x - start_x;
+    uint32_t draw_h = end_y - start_y;
     
     if (backbuffer) {
-        for (uint32_t i = 0; i < h; i++) {
-            uint32_t* row = &backbuffer[(y + i) * fb->width + x];
-            for (uint32_t j = 0; j < w; j++) {
+        for (uint32_t i = 0; i < draw_h; i++) {
+            uint32_t* row = &backbuffer[(start_y + i) * fb->width + start_x];
+            for (uint32_t j = 0; j < draw_w; j++) {
                 row[j] = color;
             }
         }
     } else {
-        for (uint32_t i = 0; i < h; i++) {
-            for (uint32_t j = 0; j < w; j++) {
-                PutPixel(x + j, y + i, color);
+        for (uint32_t i = 0; i < draw_h; i++) {
+            for (uint32_t j = 0; j < draw_w; j++) {
+                PutPixel(start_x + j, start_y + i, color);
             }
         }
     }
@@ -90,7 +99,7 @@ void Framebuffer::Clear(uint32_t color) {
     }
 }
 
-void Framebuffer::DrawChar(char c, uint32_t x, uint32_t y, uint32_t fg_color, uint32_t bg_color) {
+void Framebuffer::DrawChar(char c, int32_t x, int32_t y, uint32_t fg_color, uint32_t bg_color) {
     if ((uint8_t)c > 127) return; // Only ASCII
     for (int row = 0; row < 8; row++) {
         uint8_t row_data = font8x8_basic[(uint8_t)c][row];
@@ -104,9 +113,9 @@ void Framebuffer::DrawChar(char c, uint32_t x, uint32_t y, uint32_t fg_color, ui
     }
 }
 
-void Framebuffer::DrawString(const char* str, uint32_t x, uint32_t y, uint32_t fg_color, uint32_t bg_color) {
-    uint32_t current_x = x;
-    uint32_t current_y = y;
+void Framebuffer::DrawString(const char* str, int32_t x, int32_t y, uint32_t fg_color, uint32_t bg_color) {
+    int32_t current_x = x;
+    int32_t current_y = y;
     while (*str) {
         if (*str == '\n') {
             current_x = x;

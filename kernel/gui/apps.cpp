@@ -31,6 +31,29 @@ void DrawAppButton(int x, int y, int w, int h, const char* text, bool pressed) {
     Framebuffer::DrawString(text, text_x, text_y, 0x000000, 0xC0C0C0);
 }
 
+static void IntToString(int val, char* buf) {
+    if (val == 0) {
+        buf[0] = '0';
+        buf[1] = '\0';
+        return;
+    }
+    int temp = val;
+    if (temp < 0) temp = -temp;
+    int pos = 0;
+    char rev[16];
+    while (temp > 0) {
+        rev[pos++] = (temp % 10) + '0';
+        temp /= 10;
+    }
+    if (val < 0) rev[pos++] = '-';
+    
+    int dpos = 0;
+    while (pos > 0) {
+        buf[dpos++] = rev[--pos];
+    }
+    buf[dpos] = '\0';
+}
+
 // --- Calculator App ---
 
 void CalculatorApp::OnInit(Window* win) {
@@ -110,23 +133,26 @@ void CalculatorApp::OnMouseClick(int local_x, int local_y) {
         
         if (local_x >= bx && local_x <= bx + bw && local_y >= by && local_y <= by + bh) {
             char btn = buttons[i][0];
+            int len = 0;
+            while(display[len]) len++;
             
             if (btn >= '0' && btn <= '9') {
-                if (new_number) {
+                if (new_number && current_op == 0) {
                     display[0] = btn;
                     display[1] = '\0';
+                    current_val = btn - '0';
                     new_number = false;
                 } else {
-                    int len = 0;
-                    while(display[len]) len++;
-                    if (len < 10) {
+                    if (len < 30) {
                         display[len] = btn;
                         display[len+1] = '\0';
+                        if (new_number) {
+                            current_val = btn - '0';
+                            new_number = false;
+                        } else {
+                            current_val = current_val * 10 + (btn - '0');
+                        }
                     }
-                }
-                current_val = 0;
-                for (int j = 0; display[j]; j++) {
-                    current_val = current_val * 10 + (display[j] - '0');
                 }
             } else if (btn == 'C') {
                 display[0] = '0';
@@ -136,49 +162,49 @@ void CalculatorApp::OnMouseClick(int local_x, int local_y) {
                 current_op = 0;
                 new_number = true;
             } else if (btn == '+' || btn == '-' || btn == '*' || btn == '/') {
+                if (current_op != 0 && !new_number) {
+                    if (current_op == '+') current_val = stored_val + current_val;
+                    else if (current_op == '-') current_val = stored_val - current_val;
+                    else if (current_op == '*') current_val = stored_val * current_val;
+                    else if (current_op == '/') {
+                        if (current_val == 0) {
+                            PlayErrorSound();
+                            display[0] = 'E'; display[1] = 'R'; display[2] = 'R'; display[3] = '\0';
+                            new_number = true;
+                            current_op = 0;
+                            return;
+                        }
+                        else current_val = stored_val / current_val;
+                    }
+                }
                 stored_val = current_val;
                 current_op = btn;
                 new_number = true;
-            } else if (btn == '=') {
-                if (current_op == '+') current_val = stored_val + current_val;
-                else if (current_op == '-') current_val = stored_val - current_val;
-                else if (current_op == '*') current_val = stored_val * current_val;
-                else if (current_op == '/') {
-                    if (current_val == 0) {
-                        PlayErrorSound();
-                        display[0] = 'E';
-                        display[1] = 'R';
-                        display[2] = 'R';
-                        display[3] = '\0';
-                        new_number = true;
-                        return;
-                    } else {
-                        current_val = stored_val / current_val;
-                    }
-                }
                 
-                if (current_val == 0) {
-                    display[0] = '0';
-                    display[1] = '\0';
-                } else {
-                    int temp = current_val;
-                    if (temp < 0) temp = -temp;
-                    char buf[16];
-                    int pos = 0;
-                    while (temp > 0) {
-                        buf[pos++] = (temp % 10) + '0';
-                        temp /= 10;
+                IntToString(stored_val, display);
+                len = 0; while(display[len]) len++;
+                display[len] = btn;
+                display[len+1] = '\0';
+                
+            } else if (btn == '=') {
+                if (current_op != 0) {
+                    if (current_op == '+') current_val = stored_val + current_val;
+                    else if (current_op == '-') current_val = stored_val - current_val;
+                    else if (current_op == '*') current_val = stored_val * current_val;
+                    else if (current_op == '/') {
+                        if (current_val == 0) {
+                            PlayErrorSound();
+                            display[0] = 'E'; display[1] = 'R'; display[2] = 'R'; display[3] = '\0';
+                            new_number = true;
+                            current_op = 0;
+                            return;
+                        }
+                        else current_val = stored_val / current_val;
                     }
-                    if (current_val < 0) buf[pos++] = '-';
-                    
-                    int dpos = 0;
-                    while (pos > 0) {
-                        display[dpos++] = buf[--pos];
-                    }
-                    display[dpos] = '\0';
+                    current_op = 0;
+                    IntToString(current_val, display);
+                    new_number = true;
                 }
-                new_number = true;
-                current_op = 0;
             }
             break;
         }
