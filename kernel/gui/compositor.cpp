@@ -225,10 +225,12 @@ void Compositor::Render() {
     // 2. Logic for Start Menu
     int taskbar_h = 22;
     int btn_w = 68;
+    bool clicked_start_btn = false;
     
     if (mouse_clicked) {
         if (mouse_x >= 0 && mouse_x <= btn_w && mouse_y >= (int)screen_h - taskbar_h && mouse_y <= (int)screen_h) {
             start_menu_open = !start_menu_open;
+            clicked_start_btn = true;
         } else if (start_menu_open) {
             int menu_w = 200;
             int menu_h = 300;
