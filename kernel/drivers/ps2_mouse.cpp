@@ -1,6 +1,7 @@
 #include "ps2_mouse.h"
 #include "../serial.h"
 #include "pic.h"
+#include "../gui/fb.h"
 
 static inline void outb(uint16_t port, uint8_t val) {
     asm volatile ( "outb %0, %1" : : "a"(val), "Nd"(port) : "memory");
@@ -150,10 +151,14 @@ void Mouse::HandleInterrupt() {
             vmmouse_send(cmd);
             
             uint32_t buttons = cmd.ax & 0xFFFF;
+            uint32_t screen_w = Framebuffer::GetWidth();
+            uint32_t screen_h = Framebuffer::GetHeight();
+            if (screen_w == 0) screen_w = 800;
+            if (screen_h == 0) screen_h = 600;
+            
             // Absolutne X i Y (z QEMU: 0 do 0xFFFF).
-            // Zakładając rozdzielczość 800x600.
-            mouse_x = (cmd.bx * 800) / 0xFFFF;
-            mouse_y = (cmd.cx * 600) / 0xFFFF;
+            mouse_x = (cmd.bx * screen_w) / 0xFFFF;
+            mouse_y = (cmd.cx * screen_h) / 0xFFFF;
             
             mouse_left = buttons & 0x20;
             mouse_right = buttons & 0x10;
