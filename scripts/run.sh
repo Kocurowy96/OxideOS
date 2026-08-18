@@ -26,14 +26,31 @@ ld -nostdlib -Ttext 0x400000 apps/hello/main.o -o apps/hello/hello.elf -no-pie
 mkdir -p apps/settings
 gcc -c apps/libgui/gui.c -o apps/libgui/gui.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector
 ar rcs apps/libgui/libgui.a apps/libgui/gui.o
-gcc -c apps/settings/main.c -o apps/settings/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -Iapps/libgui
-ld -nostdlib -Ttext 0x400000 apps/settings/main.o apps/libgui/libgui.a -o apps/settings/settings.elf -no-pie
+x86_64-elf-gcc -m64 -ffreestanding -fno-stack-protector -mno-red-zone -c apps/settings/main.c -o apps/settings/main.o -I apps/libgui
+x86_64-elf-ld -n -T apps/settings/link.ld apps/settings/main.o apps/libgui/gui.o -o SETTINGS.ELF
+
+x86_64-elf-gcc -m64 -ffreestanding -fno-stack-protector -mno-red-zone -c apps/calculator/main.c -o apps/calculator/main.o -I apps/libgui
+x86_64-elf-ld -n -T apps/settings/link.ld apps/calculator/main.o apps/libgui/gui.o -o CALC.ELF
+
+x86_64-elf-gcc -m64 -ffreestanding -fno-stack-protector -mno-red-zone -c apps/paint/main.c -o apps/paint/main.o -I apps/libgui
+x86_64-elf-ld -n -T apps/settings/link.ld apps/paint/main.o apps/libgui/gui.o -o PAINT.ELF
+
+x86_64-elf-gcc -m64 -ffreestanding -fno-stack-protector -mno-red-zone -c apps/calendar/main.c -o apps/calendar/main.o -I apps/libgui
+x86_64-elf-ld -n -T apps/settings/link.ld apps/calendar/main.o apps/libgui/gui.o -o CALENDAR.ELF
 
 # Generate disk.img (FAT32)
 if [ ! -f disk.img ]; then
     echo "Generating FAT32 disk image..."
-    dd if=/dev/zero of=disk.img bs=1M count=32 status=none
-    mkfs.fat -F 32 disk.img > /dev/null
+    dd if=/dev/zero of=disk.img bs=1M count=64
+    mformat -i disk.img -F
+    mcopy -i disk.img docs/INFO.TXT ::INFO.TXT
+    mcopy -i disk.img docs/STARTUP.WAV ::STARTUP.WAV
+    mcopy -i disk.img docs/INFO.WAV ::INFO.WAV
+    mcopy -i disk.img docs/ERROR.WAV ::ERROR.WAV
+    mcopy -i disk.img SETTINGS.ELF ::SETTINGS.ELF
+    mcopy -i disk.img CALC.ELF ::CALC.ELF
+    mcopy -i disk.img PAINT.ELF ::PAINT.ELF
+    mcopy -i disk.img CALENDAR.ELF ::CALENDAR.ELF
     
     # Tworzenie struktury katalogów
     mmd -i disk.img ::/DOCS
@@ -41,7 +58,6 @@ if [ ! -f disk.img ]; then
 fi
 
 mcopy -o -i disk.img apps/hello/hello.elf ::/HELLO.ELF
-mcopy -o -i disk.img apps/settings/settings.elf ::/SETTINGS.ELF
 
 # Kopiowanie dodatkowych assetów (tła, ikony, dźwięki) na dysk FAT32
 if [ -d assets ]; then

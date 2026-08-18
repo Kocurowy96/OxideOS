@@ -14,4 +14,9 @@ void sys_print(const char* str);
 void sys_exit();
 int sys_write_file(const char* path, const uint8_t* buffer, uint32_t size);
 
+struct DateTime {
+    uint8_t year, month, day, hour, minute, second;
+};
+int sys_get_time(struct DateTime* dt);
+
 void gui_draw_rect(uint32_t* fb, int win_w, int x, int y, int w, int h, uint32_t color);

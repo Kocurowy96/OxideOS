@@ -11,7 +11,7 @@ struct Task {
 class Scheduler {
 public:
     static void Init();
-    static void CreateTask(void (*entry)());
+    static void CreateTask(void (*entry)(void*), void* arg);
     static Registers* Schedule(Registers* regs);
     static void KillCurrentTask();
 };

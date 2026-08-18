@@ -431,7 +431,7 @@ void Compositor::Render() {
         const char* menu_items[] = {
             "Programy >",
             "Kalkulator",
-            "Notatnik"
+            "Ustawienia"
         };
         
         int item_y = menu_y + 4;
@@ -451,19 +451,13 @@ void Compositor::Render() {
             DrawButton(bx, by, bw, bh, menu_items[i], is_pressed);
             
             if (is_hover && mouse_clicked) {
+                extern void ExecAppTask(void*);
+                
                 if (i == 1) { // Kalkulator
-                    Window* win = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) Window(100, 100, 200, 260, "Kalkulator");
-                    CalculatorApp* app = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) CalculatorApp();
-                    win->app = app;
-                    app->OnInit(win);
-                    AddWindow(win);
+                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/CALC.ELF");
                     start_menu_open = false;
                 } else if (i == 2) { // Notatnik
-                    Window* win = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) Window(150, 120, 300, 300, "Notatnik");
-                    NotepadApp* app = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) NotepadApp();
-                    win->app = app;
-                    app->OnInit(win);
-                    AddWindow(win);
+                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/SETTINGS.ELF"); // Tymczasowo Notatnik odpala Ustawienia dla testu, potem można usunąć lub podmienić
                     start_menu_open = false;
                 }
             }
@@ -507,19 +501,11 @@ void Compositor::Render() {
                     
                     if (s_hover && mouse_clicked) {
                         if (j == 0) { // Kalendarz
-                            Window* win = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) Window(250, 80, 260, 360, "Kalendarz");
-                            CalendarApp* app = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) CalendarApp();
-                            win->app = app;
-                            app->OnInit(win);
-                            AddWindow(win);
+                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/CALENDAR.ELF");
                             start_menu_open = false;
                             programs_hovered_persistent = false;
                         } else if (j == 1) { // Paint
-                            Window* win = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) Window(200, 50, 260, 300, "Paint");
-                            PaintApp* app = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) PaintApp();
-                            win->app = app;
-                            app->OnInit(win);
-                            AddWindow(win);
+                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/PAINT.ELF");
                             start_menu_open = false;
                             programs_hovered_persistent = false;
                         }

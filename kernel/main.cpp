@@ -80,7 +80,7 @@ void operator delete[](void* p, unsigned long) {}
 #include "fs/vfs.h"
 #include "fs/elf.h"
 
-void DesktopTask() {
+void DesktopTask(void* arg) {
     Compositor::Init();
     
     static Window test_win(150, 150, 400, 250, "Witaj w OxideOS!");
@@ -103,31 +103,49 @@ void DesktopTask() {
     }
 }
 
-void UserAppTask() {
+void ExecAppTask(void* path_ptr) {
+    const char* path = (const char*)path_ptr;
     uint8_t* buffer = nullptr;
     uint32_t size = 0;
     
-    if (VFS::ReadFile("/SETTINGS.ELF", &buffer, &size)) {
-        SerialPort::WriteString("UserAppTask: Loaded SETTINGS.ELF. Jumping to Ring 3...\n");
+    if (VFS::ReadFile(path, &buffer, &size)) {
+        SerialPort::WriteString("ExecAppTask: Loaded ");
+        SerialPort::WriteString(path);
+        SerialPort::WriteString(". Jumping to Ring 3...\n");
         uint64_t entry_point = ELF::Load(buffer);
-        if (entry_point != 0) {
+        
+        if (entry_point) {
             // Allocate a user stack
             void* user_stack = PMM::AllocatePage();
             uint64_t user_stack_top = ((uint64_t)user_stack) + 4096;
             
             // Map the stack in user space (e.g., at a fixed high address)
-            uint64_t stack_vaddr = 0x700000000000 - 4096; // Canonical user address
+            // But if we run multiple tasks, we need separate stacks!
+            // Wait, we don't have separate page tables per process yet.
+            // So we need unique virtual addresses for each process stack!
+            // Let's use 0x700000000000 + (TaskID * 0x10000) for stack.
+            // Wait, we don't know TaskID here easily without a syscall.
+            // Let's generate a quick unique stack vaddr based on a counter.
+            static uint64_t next_stack = 0x700000000000;
+            uint64_t stack_vaddr = next_stack - 4096;
+            next_stack -= 0x10000;
+            
             VMM::MapPage((uint64_t)user_stack, stack_vaddr, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
             
-            SwitchToUserMode(entry_point, stack_vaddr + 4096);
-        } else {
-            SerialPort::WriteString("UserAppTask: Failed to load ELF sections.\n");
+            asm volatile(
+                "mov %0, %%rcx\n" // RIP
+                "mov %1, %%rsp\n" // RSP
+                "mov $0x202, %%r11\n" // RFLAGS (IF=1)
+                "sysretq"
+                : : "r"(entry_point), "r"(stack_vaddr + 4096) : "rcx", "r11", "memory"
+            );
         }
     } else {
-        SerialPort::WriteString("UserAppTask: Failed to read hello.elf from VFS.\n");
+        SerialPort::WriteString("ExecAppTask: Failed to load ");
+        SerialPort::WriteString(path);
+        SerialPort::WriteString("\n");
     }
     
-    // Fallback if failed
     Scheduler::KillCurrentTask();
     while (1) {
         asm volatile("hlt");
@@ -196,8 +214,12 @@ extern "C" void _start(void) {
     
     // Phase 3 Initialization
     Scheduler::Init();
-    Scheduler::CreateTask(DesktopTask);
-    Scheduler::CreateTask(UserAppTask);
+    
+    // Start the User App (SETTINGS.ELF) via Scheduler
+    Scheduler::CreateTask((void (*)(void*))ExecAppTask, (void*)"/SETTINGS.ELF");
+    
+    // Start desktop rendering task
+    Scheduler::CreateTask((void (*)(void*))DesktopTask, nullptr);
     
     PIT::Init(100); // 100 Hz = 10ms tick
 

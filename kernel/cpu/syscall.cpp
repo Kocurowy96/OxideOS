@@ -7,6 +7,7 @@
 #include "../mem/vmm.h"
 #include "../limine.h"
 #include "../fs/vfs.h"
+#include "../drivers/rtc.h"
 
 void Syscall::Handler(Registers* regs) {
     uint64_t syscall_num = regs->rax;
@@ -29,6 +30,24 @@ void Syscall::Handler(Registers* regs) {
         const uint8_t* buf = (const uint8_t*)regs->rsi;
         uint32_t size = (uint32_t)regs->rdx;
         regs->rax = VFS::WriteFile(path, buf, size) ? 1 : 0;
+    } else if (syscall_num == 4) { // sys_get_time
+        // rdi: struct DateTime*
+        struct DateTime {
+            uint8_t year, month, day, hour, minute, second;
+        };
+        DateTime* dt = (DateTime*)regs->rdi;
+        if (dt) {
+            auto BcdToBin = [](uint8_t bcd) { return ((bcd >> 4) * 10) + (bcd & 0x0F); };
+            dt->year = BcdToBin(RTC::GetYear());
+            dt->month = BcdToBin(RTC::GetMonth());
+            dt->day = BcdToBin(RTC::GetDay());
+            dt->hour = BcdToBin(RTC::GetHour());
+            dt->minute = BcdToBin(RTC::GetMinute());
+            dt->second = 0; // Not implemented in our simple RTC wrapper yet
+            regs->rax = 1;
+        } else {
+            regs->rax = 0;
+        }
     } else if (syscall_num == 50) { // sys_create_window
         // rdi: title (const char*), rsi: width, rdx: height, r10: x, r8: y, r9: CreateWindowResult* pointer
         const char* title = (const char*)regs->rdi;
@@ -56,7 +75,8 @@ void Syscall::Handler(Registers* regs) {
         }
         
         Window* win = &sys_windows[sys_windows_count++];
-        *win = Window(x, y, w, h, title);
+        int titlebar_h = 20;
+        *win = Window(x, y, w + 4, h + titlebar_h + 2, title);
         
         // Allocate physical memory for the framebuffer
         size_t size = w * h * 4;

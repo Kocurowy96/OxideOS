@@ -19,7 +19,7 @@ void Scheduler::Init() {
     }
 }
 
-void Scheduler::CreateTask(void (*entry)()) {
+void Scheduler::CreateTask(void (*entry)(void*), void* arg) {
     if (task_count >= MAX_TASKS) return;
     
     // Find empty slot
@@ -55,6 +55,7 @@ void Scheduler::CreateTask(void (*entry)()) {
     t->regs.rflags = 0x202; // IF enabled
     t->regs.cs = 0x08; // Kernel Code
     t->regs.ss = 0x10; // Kernel Data
+    t->regs.rdi = (uint64_t)arg; // Arg 1
     
     task_count++;
 }

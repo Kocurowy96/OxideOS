@@ -10,11 +10,30 @@ void sys_exit() {
     asm volatile("int $0x80" : : "a"(syscall_num));
 }
 
-int sys_write_file(const char* path, const uint8_t* buffer, uint32_t size) {
-    long syscall_num = 3;
-    long ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(path), "S"(buffer), "d"((long)size));
-    return (int)ret;
+int sys_write_file(const char* path, const uint8_t* buf, uint32_t size) {
+    int res;
+    asm volatile(
+        "mov $3, %%rax\n"
+        "mov %1, %%rdi\n"
+        "mov %2, %%rsi\n"
+        "mov %3, %%rdx\n"
+        "syscall\n"
+        "mov %%eax, %0\n"
+        : "=r"(res) : "r"(path), "r"(buf), "r"((uint64_t)size) : "rax", "rdi", "rsi", "rdx", "rcx", "r11", "memory"
+    );
+    return res;
+}
+
+int sys_get_time(struct DateTime* dt) {
+    int res;
+    asm volatile(
+        "mov $4, %%rax\n"
+        "mov %1, %%rdi\n"
+        "syscall\n"
+        "mov %%eax, %0\n"
+        : "=r"(res) : "r"(dt) : "rax", "rdi", "rcx", "r11", "memory"
+    );
+    return res;
 }
 
 int sys_create_window(const char* title, int width, int height, int x, int y, uint32_t** fb_buffer) {
