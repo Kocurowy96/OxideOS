@@ -39,6 +39,18 @@ static void print_uint64(uint64_t val) {
 }
 
 #include "gui/compositor.h"
+#include "gui/osod.h"
+
+extern "C" void* memset(void* dest, int val, uint64_t len) {
+    uint8_t* ptr = (uint8_t*)dest;
+    while (len-- > 0)
+        *ptr++ = (uint8_t)val;
+    return dest;
+}
+
+void operator delete(void* p, unsigned long) {}
+void operator delete[](void* p, unsigned long) {}
+
 #include "gui/fb.h"
 #include "drivers/ps2_kbd.h"
 #include "drivers/ps2_mouse.h"
@@ -54,8 +66,10 @@ void DesktopTask() {
     
     uint8_t* wav_buffer = nullptr;
     uint32_t wav_size = 0;
-    // Wczytujemy plik z wyprzedzeniem (aby zbuforować w FAT32)
-    VFS::ReadFile("/STARTUP.WAV", &wav_buffer, &wav_size);
+    // Odtwarzamy dźwięk startowy (jeśli wbudowany/dostarczony przez użytkownika)
+    if (VFS::ReadFile("/STARTUP.WAV", &wav_buffer, &wav_size)) {
+        AC97::PlayWAV(wav_buffer);
+    }
     
     while (1) {
         Compositor::Render();

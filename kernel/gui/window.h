@@ -15,4 +15,6 @@ public:
     int drag_start_y;
     int drag_start_win_x;
     int drag_start_win_y;
+    
+    class Application* app = nullptr;
 };

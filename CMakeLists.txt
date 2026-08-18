@@ -43,6 +43,7 @@ set(KERNEL_SOURCES
     kernel/gui/fb.cpp
     kernel/gui/bmp.cpp
     kernel/gui/window.cpp
+    kernel/gui/apps.cpp
     kernel/gui/compositor.cpp
     kernel/gui/osod.cpp
     kernel/fonts/font8x8.cpp

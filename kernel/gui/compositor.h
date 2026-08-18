@@ -13,6 +13,8 @@ public:
     static bool AddWindow(Window* win);
     static void RemoveWindow(Window* win);
     
+    static void HandleKeyPress(char c);
+    
 private:
     static Window* windows[MAX_WINDOWS];
     static int window_count;
