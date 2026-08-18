@@ -138,7 +138,6 @@ void Compositor::Render() {
     // Draw Watermark
     uint32_t screen_w = Framebuffer::GetWidth();
     uint32_t screen_h = Framebuffer::GetHeight();
-    int taskbar_h = 30;
     const char* os_name = "OxideOS";
     const char* os_ver = "Wersja jadra 1.0.0 (Przejscie na Userspace)";
     
@@ -146,7 +145,7 @@ void Compositor::Render() {
     int os_name_len = 7;
     int os_ver_len = 43;
     
-    int wm_y = screen_h - taskbar_h - 24;
+    int wm_y = screen_h - 24 - 24; // Używamy sztywnej wartości (24 to wysokość paska)
     int wm_x = screen_w - (os_ver_len * 8) - 10;
     
     // Rysujemy przezroczysty tekst lekko szarym kolorem
