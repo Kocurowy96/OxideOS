@@ -26,7 +26,11 @@ void IDT::Init() {
     }
 
     for (int i = 0; i < 256; i++) {
-        SetGate(i, isr_stub_table[i], 0x08, 0x8E); // 0x8E: Interrupt Gate, Ring 0
+        if (i == 0x80) {
+            SetGate(i, isr_stub_table[i], 0x08, 0xEE); // 0xEE: Interrupt Gate, Ring 3
+        } else {
+            SetGate(i, isr_stub_table[i], 0x08, 0x8E); // 0x8E: Interrupt Gate, Ring 0
+        }
     }
 
     idt_flush((uint64_t)&idt_ptr);

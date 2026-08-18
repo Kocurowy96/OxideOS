@@ -1,8 +1,11 @@
 #include "isr.h"
+#include "syscall.h"
 #include "../serial.h"
 #include "../gui/osod.h"
 #include "../drivers/pic.h"
 #include "../drivers/pit.h"
+#include "../drivers/ps2_kbd.h"
+#include "../drivers/ps2_mouse.h"
 #include "../proc/sched.h"
 
 extern "C" Registers* isr_handler(Registers* regs) {
@@ -23,10 +26,18 @@ extern "C" Registers* isr_handler(Registers* regs) {
     
     uint64_t int_no = regs->int_no;
     
+    if (int_no == 0x80) {
+        Syscall::Handler(regs);
+    }
+    
     if (int_no >= 32 && int_no <= 47) {
         if (int_no == 32) {
             PIT::Tick();
             regs = Scheduler::Schedule(regs);
+        } else if (int_no == 33) {
+            Keyboard::HandleInterrupt();
+        } else if (int_no == 44) {
+            Mouse::HandleInterrupt();
         }
         PIC::SendEOI(int_no - 32);
     }

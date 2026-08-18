@@ -74,3 +74,10 @@ Registers* Scheduler::Schedule(Registers* regs) {
     
     return &tasks[current_task].regs;
 }
+
+void Scheduler::KillCurrentTask() {
+    if (current_task != -1 && tasks[current_task].active) {
+        tasks[current_task].active = false;
+        task_count--;
+    }
+}

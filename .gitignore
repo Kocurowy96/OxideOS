@@ -4,3 +4,8 @@ iso_root/
 *.iso
 *.o
 *.elf
+.serenity
+disk.img
+*.iso
+*.wav
+qemu_audio.wav

@@ -1,0 +1,8 @@
+#pragma once
+#include <stdint.h>
+
+class FAT32 {
+public:
+    static void Init();
+    static bool ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size);
+};

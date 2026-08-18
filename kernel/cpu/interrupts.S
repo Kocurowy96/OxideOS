@@ -3,6 +3,21 @@ idt_flush:
     lidt (%rdi)
     ret
 
+.global SwitchToUserMode
+SwitchToUserMode:
+    mov $0x23, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    mov %ax, %gs
+    
+    pushq $0x23
+    pushq %rsi
+    pushq $0x202
+    pushq $0x1B
+    pushq %rdi
+    iretq
+
 isr_stub_0:
     pushq $0
     pushq $0

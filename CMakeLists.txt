@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Limine and bare metal flags
 set(KERNEL_CXX_FLAGS "-ffreestanding -fno-stack-protector -fno-stack-check -fno-lto -fPIE -m64 -march=x86-64 -mno-80387 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone")
 # Disable exceptions and rtti for kernel
-set(KERNEL_CXX_FLAGS "${KERNEL_CXX_FLAGS} -fno-exceptions -fno-rtti")
+set(KERNEL_CXX_FLAGS "${KERNEL_CXX_FLAGS} -fno-exceptions -fno-rtti -fno-threadsafe-statics")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KERNEL_CXX_FLAGS}")
 
@@ -26,15 +26,28 @@ set(KERNEL_SOURCES
     kernel/cpu/idt.cpp
     kernel/cpu/interrupts.S
     kernel/cpu/isr.cpp
+    kernel/cpu/syscall.cpp
     kernel/drivers/pic.cpp
     kernel/drivers/rtc.cpp
     kernel/drivers/pit.cpp
+    kernel/drivers/ps2_kbd.cpp
+    kernel/drivers/ps2_mouse.cpp
+    kernel/drivers/ata.cpp
+    kernel/drivers/pci.cpp
+    kernel/drivers/ac97.cpp
+    kernel/fs/vfs.cpp
+    kernel/fs/fat32.cpp
+    kernel/fs/elf.cpp
     kernel/mem/pmm.cpp
     kernel/mem/vmm.cpp
     kernel/gui/fb.cpp
+    kernel/gui/bmp.cpp
+    kernel/gui/window.cpp
+    kernel/gui/compositor.cpp
     kernel/gui/osod.cpp
     kernel/fonts/font8x8.cpp
     kernel/proc/sched.cpp
+    kernel/media/wav.cpp
 )
 
 add_executable(kernel.elf ${KERNEL_SOURCES})

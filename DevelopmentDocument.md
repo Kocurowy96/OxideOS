@@ -211,3 +211,18 @@ Self-Hosting: Zdolność kompilowania kodu OxideOS (przez własny kompilator) we
 Rozwój Sterowników: Dodawanie obsługi nowszego sprzętu (USB 2.0/3.0 Controller, nowoczesne karty graficzne).
 
 Wsparcie Społeczności: Otwarcie API biblioteki liboxide dla zewnętrznych programistów i rozbudowa repozytoriów Menedżera Pakietów.
+
+---
+## Osiągnięto Milestone: Rozbudowa GUI (Window Manager, Ikony i Zamykanie) - ZAKOŃCZONA
+Wprowadziliśmy Menedżera Okien do warstwy Compositora.
+- OxideOS potrafi instancjonować obiekty klasy `Window`.
+- Rysowanie respektuje Z-Index (tło -> okna -> pasek zadań -> mysz).
+- Włączono przechwytywanie i przesuwanie okienek po ekranie (tzw. drag and drop) z wykorzystaniem trybu absolutnego dla kursora myszy.
+- Okna potrafią się zamykać (znikać z tablicy menedżera) po kliknięciu wyrenderowanego przycisku **[X]**.
+- OxideOS przy starcie ładuje z systemu plików maleńkie ikonki `.bmp` i dynamicznie rysuje je w Pasku Tytułowym!
+
+## Co dalej?
+Wszystkie najważniejsze podstawy systemu operacyjnego (GUI, Z-Index, Obsługa zdarzeń Myszki, Pamięć Masowa i VFS) zostały zbudowane na niesamowicie wysokim poziomie! 
+
+Kolejnym potężnym krokiem w naturalnym cyklu rozwoju jest:
+* **Przestrzeń Użytkownika (User Space - Ring 3)**: Oddzielenie pamięci jądra od pamięci użytkownika i pierwsze Syscalle. Prawdziwe załadowanie pierwszego, zewnętrznego programu wykonywalnego (np. w formacie `.elf` lub autorskim `.oxe`) z nowo stworzonego systemu FAT32 do pamięci wirtualnej i wykonanie go!
