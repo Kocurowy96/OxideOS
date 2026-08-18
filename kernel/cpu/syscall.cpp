@@ -5,6 +5,7 @@
 #include "../gui/compositor.h"
 #include "../mem/pmm.h"
 #include "../mem/vmm.h"
+#include "../limine.h"
 
 void Syscall::Handler(Registers* regs) {
     uint64_t syscall_num = regs->rax;
