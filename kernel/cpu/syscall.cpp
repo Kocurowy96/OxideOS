@@ -32,7 +32,25 @@ void Syscall::Handler(Registers* regs) {
         int y = regs->r8;
         uint64_t res_ptr = regs->r9;
         
-        Window* win = new Window(x, y, w, h, title);
+        static Window sys_windows[32] = {
+            Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""),
+            Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""),
+            Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""),
+            Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""),
+            Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""),
+            Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""),
+            Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""),
+            Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,"")
+        };
+        static int sys_windows_count = 0;
+        
+        if (sys_windows_count >= 32) {
+            regs->rax = 0; // Error
+            return;
+        }
+        
+        Window* win = &sys_windows[sys_windows_count++];
+        *win = Window(x, y, w, h, title);
         
         // Allocate physical memory for the framebuffer
         size_t size = w * h * 4;
