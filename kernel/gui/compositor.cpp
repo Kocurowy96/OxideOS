@@ -247,7 +247,10 @@ void Compositor::Render() {
     // Rysowanie otwartych okien na pasku
     int tb_x = btn_w + 4;
     for (int i = 0; i < window_count; i++) {
-        int w_btn_w = 120;
+        int title_len = 0;
+        while(windows[i]->title[title_len]) title_len++;
+        int w_btn_w = title_len * 8 + 16;
+        
         if (tb_x + w_btn_w > (int)screen_w - 60) break; // Brak miejsca (zostawiamy na zegarek)
         
         bool is_top = (i == window_count - 1); // Aktywne okno (na wierzchu)
