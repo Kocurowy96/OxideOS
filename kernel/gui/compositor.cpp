@@ -135,8 +135,23 @@ void Compositor::Render() {
         BMP::Draw(bg_bmp, 0, 0);
     }
     
+    // Draw Watermark
     uint32_t screen_w = Framebuffer::GetWidth();
     uint32_t screen_h = Framebuffer::GetHeight();
+    int taskbar_h = 30;
+    const char* os_name = "OxideOS";
+    const char* os_ver = "Wersja jadra 1.0.0 (Przejscie na Userspace)";
+    
+    // Text is 8x8 pixels per char
+    int os_name_len = 7;
+    int os_ver_len = 43;
+    
+    int wm_y = screen_h - taskbar_h - 24;
+    int wm_x = screen_w - (os_ver_len * 8) - 10;
+    
+    // Rysujemy przezroczysty tekst lekko szarym kolorem
+    Framebuffer::DrawStringTransparent(os_name, screen_w - (os_name_len * 8) - 10, wm_y - 12, 0xD0D0D0);
+    Framebuffer::DrawStringTransparent(os_ver, wm_x, wm_y, 0xD0D0D0);
     
     // 1.5 Window Logic (Przeciąganie okien)
     int titlebar_h = 20;

@@ -127,3 +127,30 @@ void Framebuffer::DrawString(const char* str, int32_t x, int32_t y, uint32_t fg_
         str++;
     }
 }
+
+void Framebuffer::DrawCharTransparent(char c, int32_t x, int32_t y, uint32_t fg_color) {
+    if ((uint8_t)c > 127) return;
+    for (int row = 0; row < 8; row++) {
+        uint8_t row_data = font8x8_basic[(uint8_t)c][row];
+        for (int col = 0; col < 8; col++) {
+            if (row_data & (1 << col)) {
+                PutPixel(x + col, y + row, fg_color);
+            }
+        }
+    }
+}
+
+void Framebuffer::DrawStringTransparent(const char* str, int32_t x, int32_t y, uint32_t fg_color) {
+    int32_t current_x = x;
+    int32_t current_y = y;
+    while (*str) {
+        if (*str == '\n') {
+            current_x = x;
+            current_y += 8;
+        } else {
+            DrawCharTransparent(*str, current_x, current_y, fg_color);
+            current_x += 8;
+        }
+        str++;
+    }
+}

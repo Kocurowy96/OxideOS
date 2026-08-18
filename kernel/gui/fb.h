@@ -9,6 +9,8 @@ public:
     static void Clear(uint32_t color);
     static void DrawChar(char c, int32_t x, int32_t y, uint32_t fg_color, uint32_t bg_color);
     static void DrawString(const char* str, int32_t x, int32_t y, uint32_t fg_color, uint32_t bg_color);
+    static void DrawCharTransparent(char c, int32_t x, int32_t y, uint32_t fg_color);
+    static void DrawStringTransparent(const char* str, int32_t x, int32_t y, uint32_t fg_color);
     
     static uint32_t GetWidth();
     static uint32_t GetHeight();
