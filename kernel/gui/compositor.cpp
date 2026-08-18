@@ -272,7 +272,7 @@ void Compositor::Render() {
     // Start Button (Wciśnięty/Puszczony w zależności od stanu menu)
     int btn_y = screen_h - taskbar_h + 2;
     int btn_h = taskbar_h - 4;
-    DrawButton(2, btn_y, btn_w - 2, btn_h, "OxideOS", start_menu_open);
+    DrawButton(2, btn_y, btn_w - 2, btn_h, "Start", start_menu_open);
     
     // Rysowanie otwartych okien na pasku
     int tb_x = btn_w + 4;
@@ -280,7 +280,7 @@ void Compositor::Render() {
         Window* win = taskbar_windows[i];
         int title_len = 0;
         while(win->title[title_len]) title_len++;
-        int w_btn_w = title_len * 8 + 16;
+        int w_btn_w = 120; // Stała szerokość
         
         if (tb_x + w_btn_w > (int)screen_w - 60) break; // Brak miejsca (zostawiamy na zegarek)
         
@@ -306,7 +306,18 @@ void Compositor::Render() {
             is_top = true;
         }
         
-        DrawButton(tb_x, btn_y, w_btn_w, btn_h, win->title, is_top);
+        // Truncate title
+        char trunc_title[14]; // Max ~12 chars + ...
+        int title_len = 0;
+        while(win->title[title_len]) title_len++;
+        if (title_len > 12) {
+            for(int k=0; k<9; k++) trunc_title[k] = win->title[k];
+            trunc_title[9] = '.'; trunc_title[10] = '.'; trunc_title[11] = '.'; trunc_title[12] = '\0';
+        } else {
+            for(int k=0; k<=title_len; k++) trunc_title[k] = win->title[k];
+        }
+        
+        DrawButton(tb_x, btn_y, w_btn_w, btn_h, trunc_title, is_top);
         tb_x += w_btn_w + 2;
     }
     
@@ -362,9 +373,9 @@ void Compositor::Render() {
         
         for (int i = 0; i < 3; i++) {
             int bx = 28;
-            int by = item_y + i * 26;
+            int by = item_y + i * 22; // Zmniejszono odstęp z 26 na 22
             int bw = menu_w - 32;
-            int bh = 24;
+            int bh = 20; // Zmniejszono wysokość przycisków z 24 na 20
             
             bool is_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
             bool is_pressed = (is_hover && mouse_left);
@@ -394,7 +405,7 @@ void Compositor::Render() {
         
         if (any_program_hovered) {
             hover_frames++;
-            if (hover_frames > 20) programs_hovered_persistent = true;
+            if (hover_frames > 45) programs_hovered_persistent = true; // Zwiększono czas otwarcia podmenu na ok 1.5s
         } else {
             hover_frames = 0;
         }
@@ -420,9 +431,9 @@ void Compositor::Render() {
                 const char* sub_items[] = { "Kalendarz", "Paint" };
                 for (int j = 0; j < 2; j++) {
                     int bx = sub_x + 4;
-                    int by = sub_y + 4 + j * 26;
+                    int by = sub_y + 4 + j * 22;
                     int bw = sub_w - 8;
-                    int bh = 24;
+                    int bh = 20;
                     
                     bool s_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
                     bool s_pressed = (s_hover && mouse_left);

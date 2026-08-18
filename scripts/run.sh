@@ -74,7 +74,7 @@ with open('icon.bmp', 'wb') as f:
             else:
                 f.write(b'\x00\x00\xff') # red (BGR)
 "
-mcopy -i disk.img icon.bmp ::/icon.bmp
+mcopy -o -i disk.img icon.bmp ::/icon.bmp
 
 # Generate ISO using xorriso
 xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \

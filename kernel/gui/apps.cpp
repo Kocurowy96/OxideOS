@@ -141,21 +141,16 @@ void CalculatorApp::OnMouseClick(int local_x, int local_y) {
             while(display[len]) len++;
             
             if (btn >= '0' && btn <= '9') {
-                if (new_number && current_op == 0) {
+                if (new_number) {
                     display[0] = btn;
                     display[1] = '\0';
                     current_val = btn - '0';
                     new_number = false;
                 } else {
-                    if (len < 30) {
+                    if (len < 21) {
                         display[len] = btn;
                         display[len+1] = '\0';
-                        if (new_number) {
-                            current_val = btn - '0';
-                            new_number = false;
-                        } else {
-                            current_val = current_val * 10 + (btn - '0');
-                        }
+                        current_val = current_val * 10 + (btn - '0');
                     }
                 }
             } else if (btn == 'C') {
