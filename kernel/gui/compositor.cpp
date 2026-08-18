@@ -340,7 +340,7 @@ void Compositor::Render() {
             }
         }
         
-        if (mouse_clicked && (mouse_x < 0 || mouse_x > menu_w || mouse_y < menu_y || mouse_y > menu_y + menu_h)) {
+        if (mouse_clicked && !clicked_start_btn && (mouse_x < 0 || mouse_x > menu_w || mouse_y < menu_y || mouse_y > menu_y + menu_h)) {
             start_menu_open = false;
         }
     }

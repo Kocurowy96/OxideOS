@@ -2,6 +2,8 @@
 #include "../limine.h"
 #include "../fonts/font8x8.h"
 
+extern "C" void* memcpy(void* dest, const void* src, uint64_t len);
+
 extern volatile struct limine_framebuffer_request framebuffer_request;
 
 #include "../mem/pmm.h"
@@ -42,10 +44,7 @@ void Framebuffer::SwapBuffers() {
     uint32_t* screen = (uint32_t*)fb->address;
     
     if (fb->pitch == fb->width * 4) {
-        size_t total = fb->width * fb->height;
-        for(size_t i = 0; i < total; i++) {
-            screen[i] = backbuffer[i];
-        }
+        memcpy(screen, backbuffer, fb->width * fb->height * 4);
     } else {
         for (uint32_t y = 0; y < fb->height; y++) {
             for (uint32_t x = 0; x < fb->width; x++) {
@@ -57,16 +56,38 @@ void Framebuffer::SwapBuffers() {
 
 void Framebuffer::DrawRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color) {
     if (!fb) return;
-    for (uint32_t i = 0; i < h; i++) {
-        for (uint32_t j = 0; j < w; j++) {
-            PutPixel(x + j, y + i, color);
+    if (x >= fb->width || y >= fb->height) return;
+    if (x + w > fb->width) w = fb->width - x;
+    if (y + h > fb->height) h = fb->height - y;
+    
+    if (backbuffer) {
+        for (uint32_t i = 0; i < h; i++) {
+            uint32_t* row = &backbuffer[(y + i) * fb->width + x];
+            for (uint32_t j = 0; j < w; j++) {
+                row[j] = color;
+            }
+        }
+    } else {
+        for (uint32_t i = 0; i < h; i++) {
+            for (uint32_t j = 0; j < w; j++) {
+                PutPixel(x + j, y + i, color);
+            }
         }
     }
 }
 
 void Framebuffer::Clear(uint32_t color) {
     if (!fb) return;
-    DrawRect(0, 0, fb->width, fb->height, color);
+    if (backbuffer) {
+        uint64_t color64 = ((uint64_t)color << 32) | color;
+        uint64_t* ptr = (uint64_t*)backbuffer;
+        size_t qwords = (fb->width * fb->height) / 2;
+        while(qwords--) {
+            *ptr++ = color64;
+        }
+    } else {
+        DrawRect(0, 0, fb->width, fb->height, color);
+    }
 }
 
 void Framebuffer::DrawChar(char c, uint32_t x, uint32_t y, uint32_t fg_color, uint32_t bg_color) {

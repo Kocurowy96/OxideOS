@@ -83,4 +83,4 @@ echo "OxideOS ISO generated at oxideos.iso"
 
 # Run QEMU
 echo "Starting QEMU..."
-qemu-system-x86_64 -m 512M -cdrom oxideos.iso -hda disk.img -boot d -serial stdio -audiodev pa,id=snd0 -device AC97,audiodev=snd0
+qemu-system-x86_64 -enable-kvm -m 512M -cdrom oxideos.iso -hda disk.img -boot d -serial stdio -audiodev pa,id=snd0 -device AC97,audiodev=snd0

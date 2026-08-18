@@ -48,6 +48,22 @@ extern "C" void* memset(void* dest, int val, uint64_t len) {
     return dest;
 }
 
+extern "C" void* memcpy(void* dest, const void* src, uint64_t len) {
+    uint64_t* d64 = (uint64_t*)dest;
+    const uint64_t* s64 = (const uint64_t*)src;
+    while (len >= 8) {
+        *d64++ = *s64++;
+        len -= 8;
+    }
+    uint8_t* d8 = (uint8_t*)d64;
+    const uint8_t* s8 = (const uint8_t*)s64;
+    while (len > 0) {
+        *d8++ = *s8++;
+        len--;
+    }
+    return dest;
+}
+
 void operator delete(void* p, unsigned long) {}
 void operator delete[](void* p, unsigned long) {}
 
