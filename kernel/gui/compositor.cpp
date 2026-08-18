@@ -3,6 +3,7 @@
 #include "bmp.h"
 #include "../drivers/ps2_mouse.h"
 #include "../drivers/ac97.h"
+#include "../drivers/rtc.h"
 #include "application.h"
 #include "apps.h"
 #include "../mem/pmm.h"
@@ -223,7 +224,7 @@ void Compositor::Render() {
     }
     
     // 2. Logic for Start Menu
-    int taskbar_h = 22;
+    int taskbar_h = 24;
     int btn_w = 68;
     bool clicked_start_btn = false;
     
@@ -231,13 +232,6 @@ void Compositor::Render() {
         if (mouse_x >= 0 && mouse_x <= btn_w && mouse_y >= (int)screen_h - taskbar_h && mouse_y <= (int)screen_h) {
             start_menu_open = !start_menu_open;
             clicked_start_btn = true;
-        } else if (start_menu_open) {
-            int menu_w = 200;
-            int menu_h = 300;
-            int menu_y = screen_h - taskbar_h - menu_h;
-            
-            // Sprawdzenie kliknięć w przyciski (zakodowane poniżej)
-            // Zostanie obsłużone w trakcie rysowania (dla ułatwienia iteracji)
         }
     }
     
@@ -248,25 +242,56 @@ void Compositor::Render() {
     // Start Button (Wciśnięty/Puszczony w zależności od stanu menu)
     int btn_y = screen_h - taskbar_h + 2;
     int btn_h = taskbar_h - 4;
-    if (start_menu_open) {
-        Framebuffer::DrawRect(2, btn_y, btn_w - 2, btn_h, 0xC0C0C0); // Jasny, puszczony
-        Framebuffer::DrawRect(2, btn_y, btn_w - 2, 1, 0x000000); // inner shadow top
-        Framebuffer::DrawRect(2, btn_y, 1, btn_h, 0x000000); // inner shadow left
-    } else {
-        Framebuffer::DrawRect(2, btn_y, btn_w - 2, btn_h, 0xC0C0C0); // Jasny, puszczony
-        Framebuffer::DrawRect(2, btn_y, btn_w - 2, 1, 0xFFFFFF); // highlight top
-        Framebuffer::DrawRect(2, btn_y, 1, btn_h, 0xFFFFFF); // highlight left
-        Framebuffer::DrawRect(btn_w - 1, btn_y, 1, btn_h, 0x000000); // shadow right
-        Framebuffer::DrawRect(btn_w, btn_y, 1, btn_h, 0x000000); // shadow right
-        Framebuffer::DrawRect(2, btn_y + btn_h - 1, btn_w - 2, 1, 0x000000); // shadow dół
+    DrawButton(2, btn_y, btn_w - 2, btn_h, "OxideOS", start_menu_open);
+    
+    // Rysowanie otwartych okien na pasku
+    int tb_x = btn_w + 4;
+    for (int i = 0; i < window_count; i++) {
+        int w_btn_w = 120;
+        if (tb_x + w_btn_w > (int)screen_w - 60) break; // Brak miejsca (zostawiamy na zegarek)
+        
+        bool is_top = (i == window_count - 1); // Aktywne okno (na wierzchu)
+        
+        // Check hover/click na taskbarze
+        bool is_hover = (mouse_x >= tb_x && mouse_x <= tb_x + w_btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h);
+        if (is_hover && mouse_clicked && !start_menu_open) {
+            // Przenieś to okno na samą górę
+            Window* win = windows[i];
+            for (int j = i; j < window_count - 1; j++) {
+                windows[j] = windows[j + 1];
+            }
+            windows[window_count - 1] = win;
+            is_top = true;
+        }
+        
+        DrawButton(tb_x, btn_y, w_btn_w, btn_h, windows[i]->title, is_top);
+        tb_x += w_btn_w + 2;
     }
     
-    Framebuffer::DrawString("OxideOS", 7 + (start_menu_open ? 1 : 0), screen_h - taskbar_h + 7 + (start_menu_open ? 1 : 0), 0x000000, 0xC0C0C0);
+    // Zegarek
+    int clock_w = 54;
+    int clock_x = screen_w - clock_w - 2;
+    Framebuffer::DrawRect(clock_x, btn_y, clock_w, btn_h, 0xC0C0C0);
+    Framebuffer::DrawRect(clock_x, btn_y, clock_w, 1, 0x808080); // inner shadow top
+    Framebuffer::DrawRect(clock_x, btn_y, 1, btn_h, 0x808080); // inner shadow left
+    Framebuffer::DrawRect(clock_x + clock_w - 1, btn_y, 1, btn_h, 0xFFFFFF); // highlight right
+    Framebuffer::DrawRect(clock_x, btn_y + btn_h - 1, clock_w, 1, 0xFFFFFF); // highlight bottom
+    
+    uint8_t h = RTC::GetHour();
+    uint8_t m = RTC::GetMinute();
+    char time_str[6] = {
+        (char)('0' + (h >> 4)), (char)('0' + (h & 0x0F)), ':',
+        (char)('0' + (m >> 4)), (char)('0' + (m & 0x0F)), '\0'
+    };
+    Framebuffer::DrawString(time_str, clock_x + 8, btn_y + (btn_h - 8) / 2, 0x000000, 0xC0C0C0);
     
     // 4. Draw Start Menu
+    static bool programs_hovered_persistent = false;
+    static uint32_t hover_frames = 0;
+    
     if (start_menu_open) {
-        int menu_w = 200;
-        int menu_h = 300;
+        int menu_w = 160;
+        int menu_h = 240;
         int menu_y = screen_h - taskbar_h - menu_h;
         
         Framebuffer::DrawRect(0, menu_y, menu_w, menu_h, 0xC0C0C0);
@@ -275,76 +300,105 @@ void Compositor::Render() {
         Framebuffer::DrawRect(menu_w - 2, menu_y, 2, menu_h, 0x000000); // shadow right
         Framebuffer::DrawRect(0, menu_y + menu_h - 2, menu_w, 2, 0x000000); // shadow bottom
         
-        // Pasek Boczny z gradientem / kolorem
-        Framebuffer::DrawRect(2, menu_y + 2, 30, menu_h - 4, 0x000080);
+        // Pasek Boczny
+        Framebuffer::DrawRect(2, menu_y + 2, 24, menu_h - 4, 0x000080);
         
-        // Items
-        Framebuffer::DrawString("OxideOS (WIP)", 45, menu_y + 10, 0x000000, 0xC0C0C0);
-        
-        Framebuffer::DrawRect(40, menu_y + 35, menu_w - 44, 2, 0x808080); // Separator
-        Framebuffer::DrawRect(40, menu_y + 36, menu_w - 44, 1, 0xFFFFFF);
+        const char* os_name = "OxideOS";
+        int banner_y = menu_y + menu_h - 80;
+        for (int i = 0; os_name[i]; i++) {
+            Framebuffer::DrawChar(os_name[i], 10, banner_y + i * 10, 0xFFFFFF, 0x000080);
+        }
         
         const char* menu_items[] = {
-            "1. Kalkulator",
-            "2. Notatnik",
-            "3. Pasjans",
-            "4. Dzwiek Testowy",
-            "5. Odtworz WAV"
+            "Programy >",
+            "Kalkulator",
+            "Notatnik"
         };
         
-        int item_y = menu_y + 45;
-        for (int i = 0; i < 5; i++) {
-            int bx = 45;
-            int by = item_y + i * 35;
-            int bw = menu_w - 55;
-            int bh = 28;
+        int item_y = menu_y + 4;
+        bool any_program_hovered = false;
+        
+        for (int i = 0; i < 3; i++) {
+            int bx = 28;
+            int by = item_y + i * 26;
+            int bw = menu_w - 32;
+            int bh = 24;
             
             bool is_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
             bool is_pressed = (is_hover && mouse_left);
             
+            if (i == 0 && is_hover) any_program_hovered = true;
+            
             DrawButton(bx, by, bw, bh, menu_items[i], is_pressed);
             
             if (is_hover && mouse_clicked) {
-                if (i == 0) {
-                    // Kalkulator
+                if (i == 1) { // Kalkulator
                     Window* win = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) Window(100, 100, 200, 260, "Kalkulator");
                     CalculatorApp* app = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) CalculatorApp();
                     win->app = app;
                     app->OnInit(win);
                     AddWindow(win);
-                } else if (i == 1) {
-                    // Notatnik
+                    start_menu_open = false;
+                } else if (i == 2) { // Notatnik
                     Window* win = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) Window(150, 120, 300, 300, "Notatnik");
                     NotepadApp* app = new ((void*)((uint64_t)PMM::AllocatePage() + hhdm_request.response->offset)) NotepadApp();
                     win->app = app;
                     app->OnInit(win);
                     AddWindow(win);
-                } else if (i == 3) {
-                    AC97::PlaySquareWave();
-                } else if (i == 4) {
-                    uint8_t* wav_buffer = nullptr;
-                    uint32_t wav_size = 0;
-                    if (VFS::ReadFile("/STARTUP.WAV", &wav_buffer, &wav_size)) {
-                        AC97::PlayWAV(wav_buffer);
-                    }
+                    start_menu_open = false;
                 }
-                
-                if (i != 0 && i != 1 && i != 3 && i != 4) {
-                    // Unsupported
-                    uint8_t* wav_buffer = nullptr;
-                    uint32_t wav_size = 0;
-                    if (VFS::ReadFile("/NOTIFY.WAV", &wav_buffer, &wav_size)) {
-                        AC97::PlayWAV(wav_buffer);
-                    }
-                }
-                
-                start_menu_open = false;
             }
         }
         
-        if (mouse_clicked && !clicked_start_btn && (mouse_x < 0 || mouse_x > menu_w || mouse_y < menu_y || mouse_y > menu_y + menu_h)) {
-            start_menu_open = false;
+        if (any_program_hovered) {
+            hover_frames++;
+            if (hover_frames > 20) programs_hovered_persistent = true;
+        } else {
+            hover_frames = 0;
         }
+        
+        int sub_w = 120;
+        int sub_h = 60;
+        int sub_x = menu_w - 2;
+        int sub_y = item_y; // na wysokosci "Programy >"
+        
+        bool in_sub = false;
+        if (programs_hovered_persistent) {
+            in_sub = (mouse_x >= sub_x && mouse_x <= sub_x + sub_w && mouse_y >= sub_y && mouse_y <= sub_y + sub_h);
+            
+            if (!any_program_hovered && !in_sub) {
+                programs_hovered_persistent = false;
+            } else {
+                Framebuffer::DrawRect(sub_x, sub_y, sub_w, sub_h, 0xC0C0C0);
+                Framebuffer::DrawRect(sub_x, sub_y, sub_w, 2, 0xFFFFFF);
+                Framebuffer::DrawRect(sub_x, sub_y, 2, sub_h, 0xFFFFFF);
+                Framebuffer::DrawRect(sub_x + sub_w - 2, sub_y, 2, sub_h, 0x000000);
+                Framebuffer::DrawRect(sub_x, sub_y + sub_h - 2, sub_w, 2, 0x000000);
+                
+                const char* sub_items[] = { "Saper", "Paint" };
+                for (int j = 0; j < 2; j++) {
+                    int bx = sub_x + 4;
+                    int by = sub_y + 4 + j * 26;
+                    int bw = sub_w - 8;
+                    int bh = 24;
+                    
+                    bool s_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
+                    bool s_pressed = (s_hover && mouse_left);
+                    DrawButton(bx, by, bw, bh, sub_items[j], s_pressed);
+                }
+            }
+        }
+        
+        if (mouse_clicked && !clicked_start_btn) {
+            bool in_menu = (mouse_x >= 0 && mouse_x <= menu_w && mouse_y >= menu_y && mouse_y <= menu_y + menu_h);
+            if (!in_menu && !in_sub) {
+                start_menu_open = false;
+                programs_hovered_persistent = false;
+            }
+        }
+    } else {
+        programs_hovered_persistent = false;
+        hover_frames = 0;
     }
     
     // 5. Draw Mouse

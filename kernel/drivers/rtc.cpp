@@ -38,3 +38,11 @@ void RTC::PrintTime() {
     print_hex(minute); SerialPort::WriteChar(':');
     print_hex(second); SerialPort::WriteString("\n");
 }
+
+uint8_t RTC::GetHour() {
+    return ReadRegister(0x04);
+}
+
+uint8_t RTC::GetMinute() {
+    return ReadRegister(0x02);
+}
