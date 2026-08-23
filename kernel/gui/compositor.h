@@ -6,12 +6,14 @@
 
 class Compositor {
 public:
+    static void InitWallpaper();
     static void Init();
     static void Render();
     
     // Zarządzanie oknami
     static bool AddWindow(Window* win);
     static void RemoveWindow(Window* win);
+    static void RemoveWindowsByTaskId(uint64_t task_id);
     static Window* GetWindowById(int id);
     
     static void HandleKeyPress(char c);

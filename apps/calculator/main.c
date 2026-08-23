@@ -7,6 +7,11 @@ int stored_val = 0;
 char current_op = 0;
 bool new_number = true;
 
+int win_id;
+uint32_t* fb;
+int win_w = 200;
+int win_h = 260;
+
 void IntToString(int val, char* str) {
     if (val == 0) {
         str[0] = '0';
@@ -35,43 +40,36 @@ void IntToString(int val, char* str) {
     }
 }
 
-void DrawAppButton(Window* win, int x, int y, int w, int h, const char* text) {
-    gui_draw_rect(win, x, y, w, h, 0x808080);
-    gui_draw_rect(win, x, y, w, 2, 0xFFFFFF);
-    gui_draw_rect(win, x, y, 2, h, 0xFFFFFF);
-    gui_draw_rect(win, x + w - 2, y, 2, h, 0x000000);
-    gui_draw_rect(win, x, y + h - 2, w, 2, 0x000000);
+void DrawAppButton(int x, int y, int w, int h, const char* text) {
+    gui_draw_rect(fb, win_w, x, y, w, h, 0x808080);
+    gui_draw_rect(fb, win_w, x, y, w, 2, 0xFFFFFF);
+    gui_draw_rect(fb, win_w, x, y, 2, h, 0xFFFFFF);
+    gui_draw_rect(fb, win_w, x + w - 2, y, 2, h, 0x000000);
+    gui_draw_rect(fb, win_w, x, y + h - 2, w, 2, 0x000000);
     
-    // Oblicz dlugosc tekstu
     int len = 0;
     while(text[len]) len++;
     
     int tx = x + (w - len * 8) / 2;
-    int ty = y + (h - 16) / 2;
-    gui_draw_string(win, text, tx, ty, 0x000000, 0x808080);
+    int ty = y + (h - 8) / 2;
+    gui_draw_string(fb, win_w, text, tx, ty, 0x000000, 0x808080);
 }
 
-void PaintCalculator(Window* win) {
+void PaintCalculator() {
     int win_x = 0;
     int win_y = 0;
-    int width = 200;
-    int height = 260;
     
-    // Tło kalkulatora
-    gui_draw_rect(win, win_x, win_y, width, height, 0xC0C0C0);
+    gui_draw_rect(fb, win_w, win_x, win_y, win_w, win_h, 0xC0C0C0);
     
-    // Wyświetlacz
-    gui_draw_rect(win, win_x + 10, win_y + 10, width - 20, 30, 0xFFFFFF);
-    gui_draw_rect(win, win_x + 9, win_y + 9, width - 18, 1, 0x000000); // top shadow
-    gui_draw_rect(win, win_x + 9, win_y + 9, 1, 32, 0x000000); // left shadow
+    gui_draw_rect(fb, win_w, win_x + 10, win_y + 10, win_w - 20, 30, 0xFFFFFF);
+    gui_draw_rect(fb, win_w, win_x + 9, win_y + 9, win_w - 18, 1, 0x000000); 
+    gui_draw_rect(fb, win_w, win_x + 9, win_y + 9, 1, 32, 0x000000); 
     
-    // Oblicz długość tekstu
     int len = 0;
     while(display[len]) len++;
-    int text_x = win_x + width - 15 - (len * 8); // wyrównanie do prawej
-    gui_draw_string(win, display, text_x, win_y + 17, 0x000000, 0xFFFFFF);
+    int text_x = win_x + win_w - 15 - (len * 8); 
+    gui_draw_string(fb, win_w, display, text_x, win_y + 17, 0x000000, 0xFFFFFF);
     
-    // Rysowanie przycisków
     const char* buttons[16] = {
         "7", "8", "9", "/",
         "4", "5", "6", "*",
@@ -80,7 +78,7 @@ void PaintCalculator(Window* win) {
     };
     
     int start_y = win_y + 50;
-    int bw = (width - 50) / 4;
+    int bw = (win_w - 50) / 4;
     int bh = 30;
     
     for (int i = 0; i < 16; i++) {
@@ -89,13 +87,12 @@ void PaintCalculator(Window* win) {
         int bx = win_x + 10 + col * (bw + 10);
         int by = start_y + row * (bh + 10);
         
-        DrawAppButton(win, bx, by, bw, bh, buttons[i]);
+        DrawAppButton(bx, by, bw, bh, buttons[i]);
     }
 }
 
-void OnMouseClick(Window* win, int local_x, int local_y) {
-    int width = 200;
-    int bw = (width - 50) / 4;
+void OnMouseClick(int local_x, int local_y) {
+    int bw = (win_w - 50) / 4;
     int bh = 30;
     
     const char* buttons[16] = {
@@ -186,29 +183,25 @@ void OnMouseClick(Window* win, int local_x, int local_y) {
     }
 }
 
-int main() {
-    Window* win = sys_create_window(100, 100, 200, 260, "Kalkulator");
-    if (!win) return 1;
+void _start() {
+    win_id = sys_create_window("Kalkulator", win_w, win_h, 100, 100, &fb);
+    if (win_id < 0 || !fb) sys_exit();
     
     display[0] = '0';
     display[1] = '\0';
     
-    PaintCalculator(win);
-    sys_update_window(win);
+    PaintCalculator();
+    sys_update_window(win_id);
     
-    Event ev;
+    struct WindowEvent ev;
     while (1) {
-        if (sys_get_event(win, &ev)) {
-            if (ev.type == EventWindowClose) {
-                break;
-            } else if (ev.type == EventMouseClick) {
-                OnMouseClick(win, ev.mouse_x, ev.mouse_y);
-                PaintCalculator(win);
-                sys_update_window(win);
+        if (sys_get_event(win_id, &ev)) {
+            if (ev.type == 1) { // Mouse click
+                OnMouseClick(ev.x, ev.y);
+                PaintCalculator();
+                sys_update_window(win_id);
             }
         }
+        for (volatile int i = 0; i < 10000; i++);
     }
-    
-    sys_exit();
-    return 0;
 }

@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Limine and bare metal flags
-set(KERNEL_CXX_FLAGS "-ffreestanding -fno-stack-protector -fno-stack-check -fno-lto -fPIE -m64 -march=x86-64 -mno-80387 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone")
+set(KERNEL_CXX_FLAGS "-O2 -ffreestanding -fno-stack-protector -fno-stack-check -fno-lto -fPIE -m64 -march=x86-64 -mno-80387 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone")
 # Disable exceptions and rtti for kernel
 set(KERNEL_CXX_FLAGS "${KERNEL_CXX_FLAGS} -fno-exceptions -fno-rtti -fno-threadsafe-statics")
 

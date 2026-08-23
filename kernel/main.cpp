@@ -72,6 +72,8 @@ extern "C" void* memcpy(void* dest, const void* src, uint64_t len) {
 
 void operator delete(void* p, unsigned long) {}
 void operator delete[](void* p, unsigned long) {}
+void operator delete(void* p) {}
+void operator delete[](void* p) {}
 
 #include "gui/fb.h"
 #include "drivers/ps2_kbd.h"
@@ -83,11 +85,7 @@ void operator delete[](void* p, unsigned long) {}
 void DesktopTask(void* arg) {
     Compositor::Init();
     
-    static Window test_win(150, 150, 400, 250, "Witaj w OxideOS!");
-    static WelcomeApp welcome_app;
-    test_win.app = &welcome_app;
-    welcome_app.OnInit(&test_win);
-    Compositor::AddWindow(&test_win);
+    // Zostawiamy puste, nowa aplikacja powitalna to HELLO.ELF z userspace'u
     
     uint8_t* wav_buffer = nullptr;
     uint32_t wav_size = 0;
@@ -133,11 +131,18 @@ void ExecAppTask(void* path_ptr) {
             VMM::MapPage((uint64_t)user_stack, stack_vaddr, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
             
             asm volatile(
-                "mov %0, %%rcx\n" // RIP
-                "mov %1, %%rsp\n" // RSP
-                "mov $0x202, %%r11\n" // RFLAGS (IF=1)
-                "sysretq"
-                : : "r"(entry_point), "r"(stack_vaddr + 4096) : "rcx", "r11", "memory"
+                "mov $0x23, %%ax\n"
+                "mov %%ax, %%ds\n"
+                "mov %%ax, %%es\n"
+                "mov %%ax, %%fs\n"
+                "mov %%ax, %%gs\n"
+                "push $0x23\n" // SS
+                "push %1\n"    // RSP
+                "push $0x202\n" // RFLAGS
+                "push $0x1B\n" // CS
+                "push %0\n"    // RIP
+                "iretq\n"
+                : : "r"(entry_point), "r"(stack_vaddr + 4096) : "ax", "memory"
             );
         }
     } else {
@@ -215,8 +220,8 @@ extern "C" void _start(void) {
     // Phase 3 Initialization
     Scheduler::Init();
     
-    // Start the User App (SETTINGS.ELF) via Scheduler
-    Scheduler::CreateTask((void (*)(void*))ExecAppTask, (void*)"/SETTINGS.ELF");
+    // Start the User App (HELLO.ELF) via Scheduler
+    Scheduler::CreateTask((void (*)(void*))ExecAppTask, (void*)"/usr/bin/HELLO.ELF");
     
     // Start desktop rendering task
     Scheduler::CreateTask((void (*)(void*))DesktopTask, nullptr);

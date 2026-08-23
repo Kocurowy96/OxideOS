@@ -49,6 +49,13 @@ static bool str_eq_83(const char* name_83, const char* search_path) {
     return true;
 }
 
+void FAT32::FreeFile(uint8_t* buffer, uint32_t size) {
+    if (!buffer) return;
+    void* phys_ptr = (void*)((uint64_t)buffer - hhdm_request.response->offset);
+    uint32_t pages = (size + 4095) / 4096;
+    PMM::FreePages(phys_ptr, pages);
+}
+
 static uint32_t GetClusterLBA(uint32_t cluster) {
     return data_start_lba + (cluster - 2) * sectors_per_cluster;
 }
@@ -58,10 +65,15 @@ static uint32_t GetNextCluster(uint32_t current_cluster) {
     uint32_t fat_sector = fat_start_lba + (fat_offset / 512);
     uint32_t ent_offset = fat_offset % 512;
     
-    uint8_t sector[512];
-    if (!ATA::ReadSector(fat_sector, sector)) return 0x0FFFFFFF;
+    static uint32_t cached_fat_sector = 0xFFFFFFFF;
+    static uint8_t cached_fat_data[512];
     
-    uint32_t next = *(uint32_t*)&sector[ent_offset];
+    if (cached_fat_sector != fat_sector) {
+        if (!ATA::ReadSector(fat_sector, cached_fat_data)) return 0x0FFFFFFF;
+        cached_fat_sector = fat_sector;
+    }
+    
+    uint32_t next = *(uint32_t*)&cached_fat_data[ent_offset];
     return next & 0x0FFFFFFF;
 }
 

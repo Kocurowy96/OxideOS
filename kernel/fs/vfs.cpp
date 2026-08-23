@@ -22,3 +22,7 @@ bool VFS::WriteFile(const char* path, const uint8_t* buffer, uint32_t size) {
     
     return FAT32::WriteFile(path, buffer, size);
 }
+
+void VFS::FreeFile(uint8_t* buffer, uint32_t size) {
+    FAT32::FreeFile(buffer, size);
+}

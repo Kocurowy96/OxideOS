@@ -10,30 +10,53 @@ void sys_exit() {
     asm volatile("int $0x80" : : "a"(syscall_num));
 }
 
+int sys_get_tasks(struct TaskInfo* buffer, int max_count) {
+    long syscall_num = 55;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(buffer), "S"(max_count));
+    return ret;
+}
+
+int sys_kill_task(unsigned long long task_id) {
+    long syscall_num = 56;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(task_id));
+    return ret;
+}
+
+int sys_draw_bmp(int win_id, const char* path, int x, int y) {
+    long syscall_num = 57;
+    long ret;
+    register long r10 asm("r10") = y;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(win_id), "S"(path), "d"(x), "r"(r10));
+    return ret;
+}
+
 int sys_write_file(const char* path, const uint8_t* buf, uint32_t size) {
-    int res;
-    asm volatile(
-        "mov $3, %%rax\n"
-        "mov %1, %%rdi\n"
-        "mov %2, %%rsi\n"
-        "mov %3, %%rdx\n"
-        "syscall\n"
-        "mov %%eax, %0\n"
-        : "=r"(res) : "r"(path), "r"(buf), "r"((uint64_t)size) : "rax", "rdi", "rsi", "rdx", "rcx", "r11", "memory"
-    );
-    return res;
+    long syscall_num = 3;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(path), "S"(buf), "d"((long)size));
+    return (int)ret;
 }
 
 int sys_get_time(struct DateTime* dt) {
-    int res;
-    asm volatile(
-        "mov $4, %%rax\n"
-        "mov %1, %%rdi\n"
-        "syscall\n"
-        "mov %%eax, %0\n"
-        : "=r"(res) : "r"(dt) : "rax", "rdi", "rcx", "r11", "memory"
-    );
-    return res;
+    long syscall_num = 4;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(dt));
+    return (int)ret;
+}
+
+int sys_get_mem_info(uint64_t* total, uint64_t* free) {
+    long syscall_num = 6;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(total), "S"(free));
+    return (int)ret;
+}
+
+void sys_reload_wallpaper() {
+    long syscall_num = 53;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num));
 }
 
 int sys_create_window(const char* title, int width, int height, int x, int y, uint32_t** fb_buffer) {
@@ -63,7 +86,14 @@ int sys_create_window(const char* title, int width, int height, int x, int y, ui
 
 void sys_update_window(int window_id) {
     long syscall_num = 51;
-    asm volatile("int $0x80" : : "a"(syscall_num), "D"((long)window_id));
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(window_id));
+}
+
+void sys_destroy_window(int window_id) {
+    long syscall_num = 54;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(window_id));
 }
 
 int sys_get_event(int window_id, struct WindowEvent* ev) {
@@ -80,5 +110,35 @@ void gui_draw_rect(uint32_t* fb, int win_w, int x, int y, int w, int h, uint32_t
                 fb[(y + r) * win_w + (x + c)] = color;
             }
         }
+    }
+}
+
+#include "font8x8.h"
+
+void gui_draw_string(uint32_t* fb, int win_w, const char* str, int x, int y, uint32_t fg, uint32_t bg) {
+    int cx = x;
+    while (*str) {
+        if (*str == '\n') {
+            cx = x;
+            y += 8;
+        } else {
+            unsigned char c = (unsigned char)*str;
+            if (c >= 0 && c <= 127) {
+                const unsigned char* glyph = font8x8_basic[c];
+                for (int cy = 0; cy < 8; cy++) {
+                    for (int px = 0; px < 8; px++) {
+                        if (glyph[cy] & (1 << px)) {
+                            fb[(y + cy) * win_w + (cx + px)] = fg;
+                        } else {
+                            if (bg != 0xFFFFFFFF) {
+                                fb[(y + cy) * win_w + (cx + px)] = bg;
+                            }
+                        }
+                    }
+                }
+            }
+            cx += 8;
+        }
+        str++;
     }
 }

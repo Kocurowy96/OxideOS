@@ -11,6 +11,7 @@ Window::Window(int start_x, int start_y, int w, int h, const char* t) {
     title = t;
     
     is_dragging = false;
+    is_minimized = false;
     app = nullptr;
     fb_buffer = nullptr;
     event_head = 0;

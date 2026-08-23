@@ -12,12 +12,21 @@ extern "C" Registers* isr_handler(Registers* regs) {
     if (regs->int_no < 32) {
         SerialPort::WriteString("OxideOS: Kernel Panic! (OSOD)\n");
         SerialPort::WriteString("Exception Number: ");
-        char buf[16] = {0};
-        int val = regs->int_no;
-        int i = 0;
-        if (val == 0) buf[i++] = '0';
-        while (val > 0) { buf[i++] = '0' + (val % 10); val /= 10; }
-        for (int j = i - 1; j >= 0; j--) SerialPort::WriteChar(buf[j]);
+        char buf[16];
+        auto itoa = [](uint64_t v, char* b, int base) {
+            char* p = b;
+            if (v == 0) { *p++ = '0'; *p = 0; return b; }
+            while(v) { int rem = v % base; *p++ = (rem < 10) ? rem + '0' : rem - 10 + 'a'; v /= base; }
+            *p = 0;
+            char* p1 = b; char* p2 = p - 1;
+            while(p1 < p2) { char tmp = *p1; *p1 = *p2; *p2 = tmp; p1++; p2--; }
+            return b;
+        };
+        SerialPort::WriteString(itoa(regs->int_no, buf, 10));
+        SerialPort::WriteString("\nRIP: 0x");
+        SerialPort::WriteString(itoa(regs->rip, buf, 16));
+        SerialPort::WriteString("\nError Code: 0x");
+        SerialPort::WriteString(itoa(regs->err_code, buf, 16));
         SerialPort::WriteString("\nHalting.\n");
         
         OSOD::Draw(regs);

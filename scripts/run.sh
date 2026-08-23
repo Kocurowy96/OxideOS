@@ -20,45 +20,67 @@ cp build/kernel.elf iso_root/boot/
 
 # Compile Apps
 echo "Compiling apps..."
-gcc -c apps/hello/main.c -o apps/hello/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector
-ld -nostdlib -Ttext 0x400000 apps/hello/main.o -o apps/hello/hello.elf -no-pie
-
 mkdir -p apps/settings
-gcc -c apps/libgui/gui.c -o apps/libgui/gui.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector
+gcc -c apps/libgui/gui.c -o apps/libgui/gui.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float
 ar rcs apps/libgui/libgui.a apps/libgui/gui.o
-x86_64-elf-gcc -m64 -ffreestanding -fno-stack-protector -mno-red-zone -c apps/settings/main.c -o apps/settings/main.o -I apps/libgui
-x86_64-elf-ld -n -T apps/settings/link.ld apps/settings/main.o apps/libgui/gui.o -o SETTINGS.ELF
 
-x86_64-elf-gcc -m64 -ffreestanding -fno-stack-protector -mno-red-zone -c apps/calculator/main.c -o apps/calculator/main.o -I apps/libgui
-x86_64-elf-ld -n -T apps/settings/link.ld apps/calculator/main.o apps/libgui/gui.o -o CALC.ELF
+gcc -c apps/hello/main.c -o apps/hello/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
+ld -nostdlib -Ttext 0x400000 apps/hello/main.o apps/libgui/gui.o -o HELLO.ELF -no-pie
 
-x86_64-elf-gcc -m64 -ffreestanding -fno-stack-protector -mno-red-zone -c apps/paint/main.c -o apps/paint/main.o -I apps/libgui
-x86_64-elf-ld -n -T apps/settings/link.ld apps/paint/main.o apps/libgui/gui.o -o PAINT.ELF
+gcc -c apps/settings/main.c -o apps/settings/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
+ld -nostdlib -Ttext 0x500000 apps/settings/main.o apps/libgui/gui.o -o SETTINGS.ELF -no-pie
 
-x86_64-elf-gcc -m64 -ffreestanding -fno-stack-protector -mno-red-zone -c apps/calendar/main.c -o apps/calendar/main.o -I apps/libgui
-x86_64-elf-ld -n -T apps/settings/link.ld apps/calendar/main.o apps/libgui/gui.o -o CALENDAR.ELF
+gcc -c apps/calculator/main.c -o apps/calculator/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
+ld -nostdlib -Ttext 0x600000 apps/calculator/main.o apps/libgui/gui.o -o CALC.ELF -no-pie
 
+gcc -c apps/paint/main.c -o apps/paint/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
+ld -nostdlib -Ttext 0x700000 apps/paint/main.o apps/libgui/gui.o -o PAINT.ELF -no-pie
+
+gcc -c apps/calendar/main.c -o apps/calendar/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
+ld -nostdlib -Ttext 0x800000 apps/calendar/main.o apps/libgui/gui.o -o CALENDAR.ELF -no-pie
+
+gcc -c apps/winver/main.c -o apps/winver/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
+ld -nostdlib -Ttext 0x900000 apps/winver/main.o apps/libgui/gui.o -o WINVER.ELF -no-pie
+
+gcc -c apps/clock/main.c -o apps/clock/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
+ld -nostdlib -Ttext 0xA00000 apps/clock/main.o apps/libgui/gui.o -o CLOCK.ELF -no-pie
+
+gcc -c apps/notepad/main.c -o apps/notepad/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
+ld -nostdlib -Ttext 0xB00000 apps/notepad/main.o apps/libgui/gui.o -o NOTEPAD.ELF -no-pie
+
+gcc -c apps/taskmgr/main.c -o apps/taskmgr/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
+ld -nostdlib -Ttext 0xC00000 apps/taskmgr/main.o apps/libgui/gui.o -o TASKMGR.ELF -no-pie
 # Generate disk.img (FAT32)
 if [ ! -f disk.img ]; then
     echo "Generating FAT32 disk image..."
     dd if=/dev/zero of=disk.img bs=1M count=64
     mformat -i disk.img -F
-    mcopy -i disk.img docs/INFO.TXT ::INFO.TXT
-    mcopy -i disk.img docs/STARTUP.WAV ::STARTUP.WAV
-    mcopy -i disk.img docs/INFO.WAV ::INFO.WAV
-    mcopy -i disk.img docs/ERROR.WAV ::ERROR.WAV
-    mcopy -i disk.img SETTINGS.ELF ::SETTINGS.ELF
-    mcopy -i disk.img CALC.ELF ::CALC.ELF
-    mcopy -i disk.img PAINT.ELF ::PAINT.ELF
-    mcopy -i disk.img CALENDAR.ELF ::CALENDAR.ELF
-    
+
     # Tworzenie struktury katalogów
     mmd -i disk.img ::/DOCS
     mmd -i disk.img ::/PICS
+    mmd -i disk.img ::/usr
+    mmd -i disk.img ::/usr/bin
+    
+    mcopy -i disk.img SETTINGS.ELF ::/usr/bin/SETTINGS.ELF
+    mcopy -i disk.img CALC.ELF ::/usr/bin/CALC.ELF
+    mcopy -i disk.img PAINT.ELF ::/usr/bin/PAINT.ELF
+    mcopy -i disk.img CALENDAR.ELF ::/usr/bin/CALENDAR.ELF
+    mcopy -i disk.img WINVER.ELF ::/usr/bin/WINVER.ELF
+    mcopy -i disk.img CLOCK.ELF ::/usr/bin/CLOCK.ELF
+    mcopy -i disk.img NOTEPAD.ELF ::/usr/bin/NOTEPAD.ELF
+    mcopy -i disk.img TASKMGR.ELF ::/usr/bin/TASKMGR.ELF
 fi
 
-mcopy -o -i disk.img apps/hello/hello.elf ::/HELLO.ELF
-
+mcopy -o -i disk.img HELLO.ELF ::/usr/bin/HELLO.ELF
+mcopy -o -i disk.img SETTINGS.ELF ::/usr/bin/SETTINGS.ELF
+mcopy -o -i disk.img CALC.ELF ::/usr/bin/CALC.ELF
+mcopy -o -i disk.img PAINT.ELF ::/usr/bin/PAINT.ELF
+mcopy -o -i disk.img CALENDAR.ELF ::/usr/bin/CALENDAR.ELF
+mcopy -o -i disk.img WINVER.ELF ::/usr/bin/WINVER.ELF
+mcopy -o -i disk.img CLOCK.ELF ::/usr/bin/CLOCK.ELF
+mcopy -o -i disk.img NOTEPAD.ELF ::/usr/bin/NOTEPAD.ELF
+mcopy -o -i disk.img TASKMGR.ELF ::/usr/bin/TASKMGR.ELF
 # Kopiowanie dodatkowych assetów (tła, ikony, dźwięki) na dysk FAT32
 if [ -d assets ]; then
     for file in assets/*; do
@@ -70,6 +92,15 @@ fi
 
 if [ -f iso_root/bg.bmp ]; then
     mcopy -o -i disk.img iso_root/bg.bmp ::/bg.bmp
+fi
+if [ -f iso_root/wp1.bmp ]; then
+    mcopy -o -i disk.img iso_root/wp1.bmp ::/wp1.bmp
+fi
+if [ -f iso_root/winver.bmp ]; then
+    mcopy -o -i disk.img iso_root/winver.bmp ::/winver.bmp
+fi
+if [ -f iso_root/DOCS/CONFIG.DAT ]; then
+    mcopy -o -i disk.img iso_root/DOCS/CONFIG.DAT ::/DOCS/CONFIG.DAT
 fi
 
 # Generate 16x16 icon.bmp

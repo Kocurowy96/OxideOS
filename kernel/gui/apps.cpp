@@ -75,4 +75,5 @@ void WelcomeApp::OnPaint(int win_x, int win_y, int width, int height) {
     Framebuffer::DrawString("- Dzwiek AC97", win_x + 20, win_y + 120, 0x000000, 0xFFFFFF);
     
     Framebuffer::DrawString("Milego korzystania ze swiezego systemu!", win_x + 10, win_y + 160, 0x008000, 0xFFFFFF);
+}
 

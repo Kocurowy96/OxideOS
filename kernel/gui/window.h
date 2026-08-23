@@ -10,8 +10,9 @@ public:
     int width, height;
     const char* title;
     
-    // Zmienne stanu przeciągania
+    // Zmienne stanu przeciągania i minimalizacji
     bool is_dragging;
+    bool is_minimized;
     int drag_start_x;
     int drag_start_y;
     int drag_start_win_x;
@@ -19,8 +20,12 @@ public:
     
     class Application* app = nullptr;
     
+    bool active = false;
+    
     // Wsparcie dla Userspace GUI
     uint32_t* fb_buffer = nullptr;
+    void* phys_fb_buffer = nullptr;
+    uint64_t owner_task_id = 0;
     
     struct Event {
         int type; // 1 = MouseClick, 2 = KeyPress

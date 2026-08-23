@@ -27,4 +27,5 @@ struct BMPInfoHeader {
 class BMP {
 public:
     static void Draw(void* bmp_data, int32_t x, int32_t y);
+    static void DrawToBuffer(void* bmp_data, uint32_t* buffer, int buf_w, int buf_h, int32_t x, int32_t y);
 };

@@ -7,7 +7,12 @@
 #include "application.h"
 #include "apps.h"
 #include "../mem/pmm.h"
+#include "../mem/vmm.h"
+#include "../fs/vfs.h"
+#include "../proc/sched.h"
 #include "../limine.h"
+
+extern void ExecAppTask(void*);
 #include <stddef.h>
 
 inline void* operator new(size_t, void* p) { return p; }
@@ -65,6 +70,14 @@ void Compositor::RemoveWindow(Window* win) {
     }
 }
 
+void Compositor::RemoveWindowsByTaskId(uint64_t task_id) {
+    for (int i = window_count - 1; i >= 0; i--) {
+        if (windows[i]->owner_task_id == task_id) {
+            RemoveWindow(windows[i]);
+        }
+    }
+}
+
 Window* Compositor::GetWindowById(int id) {
     for (int i = 0; i < window_count; i++) {
         if (windows[i]->id == id) {
@@ -74,12 +87,11 @@ Window* Compositor::GetWindowById(int id) {
     return nullptr;
 }
 
-void Compositor::Init() {
+void Compositor::InitWallpaper() {
     char bg_name[32] = "/bg.bmp";
     uint8_t* cfg_buf = nullptr;
     uint32_t cfg_size = 0;
     
-    // Próba wczytania konfiguracji tapety
     if (VFS::ReadFile("/DOCS/CONFIG.DAT", &cfg_buf, &cfg_size)) {
         if (cfg_size > 0 && cfg_size < 32) {
             for (uint32_t i = 0; i < cfg_size; i++) {
@@ -96,7 +108,6 @@ void Compositor::Init() {
         bg_bmp = buffer;
         SerialPort::WriteString("Compositor: Loaded configured wallpaper!\n");
     } else {
-        // Fallback
         if (VFS::ReadFile("/bg.bmp", &buffer, &size)) {
             bg_bmp = buffer;
             SerialPort::WriteString("Compositor: Loaded default bg.bmp\n");
@@ -104,9 +115,13 @@ void Compositor::Init() {
             SerialPort::WriteString("Compositor: Failed to load any wallpaper.\n");
         }
     }
+}
 
-    buffer = nullptr;
-    size = 0;
+void Compositor::Init() {
+    InitWallpaper();
+
+    uint8_t* buffer = nullptr;
+    uint32_t size = 0;
     if (VFS::ReadFile("/icon.bmp", &buffer, &size)) {
         icon_bmp = buffer;
         SerialPort::WriteString("Compositor: Loaded icon.bmp from VFS!\n");
@@ -117,7 +132,14 @@ void Compositor::Init() {
 
 void Compositor::HandleKeyPress(char c) {
     if (window_count > 0) {
-        Window* top_win = windows[window_count - 1];
+        Window* top_win = nullptr;
+        for (int i = window_count - 1; i >= 0; i--) {
+            if (!windows[i]->is_minimized) {
+                top_win = windows[i];
+                break;
+            }
+        }
+        
         if (top_win && top_win->app) {
             top_win->app->OnKeyPress(c);
         } else if (top_win && top_win->fb_buffer) {
@@ -203,11 +225,27 @@ void Compositor::Render() {
         for (int i = window_count - 1; i >= 0; i--) {
             Window* win = windows[i];
             
+            if (win->is_minimized) continue; // Pomiń zminimalizowane okna
+            
             // Check [X] button (szerokość 14, wysokość 14, po prawej)
             if (mouse_x >= win->x + win->width - 18 && mouse_x <= win->x + win->width - 4 &&
                 mouse_y >= win->y + 4 && mouse_y <= win->y + 18) {
-                RemoveWindow(win);
-                break; // Usunięto okno, kończymy obsługę kliknięcia
+                if (win->app) {
+                    win->app->OnKeyPress(27); // Esc or similar?
+                } else if (win->fb_buffer) {
+                    Window::Event ev;
+                    ev.type = 3; // Close event
+                    ev.x = 0; ev.y = 0; ev.key = 0;
+                    win->PushEvent(ev);
+                }
+                break; // Kończymy obsługę kliknięcia
+            }
+            
+            // Check [_] minimize button (szerokość 14, wysokość 14, obok X)
+            if (mouse_x >= win->x + win->width - 34 && mouse_x <= win->x + win->width - 20 &&
+                mouse_y >= win->y + 4 && mouse_y <= win->y + 18) {
+                win->is_minimized = true;
+                break; // Zminimalizowano okno
             }
             
             if (mouse_x >= win->x && mouse_x <= win->x + win->width &&
@@ -263,8 +301,15 @@ void Compositor::Render() {
     
     // Przekazuj MouseMove
     if (mouse_left && !any_dragging && window_count > 0 && !start_menu_open) {
-        Window* top_win = windows[window_count - 1];
-        if (top_win->app) {
+        Window* top_win = nullptr;
+        for (int i = window_count - 1; i >= 0; i--) {
+            if (!windows[i]->is_minimized) {
+                top_win = windows[i];
+                break;
+            }
+        }
+        
+        if (top_win && top_win->app) {
             // Sprawdź czy kursor jest wewnątrz okna (lub pozwól na uciekanie, ale wewnątrz app body)
             top_win->app->OnMouseMove(mouse_x - top_win->x, mouse_y - (top_win->y + titlebar_h));
         }
@@ -273,6 +318,8 @@ void Compositor::Render() {
     // 1.6 Renderowanie Okien
     for (int i = 0; i < window_count; i++) {
         Window* win = windows[i];
+        if (win->is_minimized) continue; // Pomiń zminimalizowane
+        
         // Ciało okna
         Framebuffer::DrawRect(win->x, win->y, win->width, win->height, 0xC0C0C0);
         // Obramowanie okna
@@ -300,8 +347,17 @@ void Compositor::Render() {
         Framebuffer::DrawRect(close_x, close_y, 1, 14, 0xFFFFFF);
         Framebuffer::DrawRect(close_x + 13, close_y, 1, 14, 0x000000);
         Framebuffer::DrawRect(close_x, close_y + 13, 14, 1, 0x000000);
-        
         Framebuffer::DrawString("X", close_x + 3, close_y + 3, 0x000000, 0xC0C0C0);
+        
+        // Przycisk Minimalizacji [_]
+        int min_x = win->x + win->width - 34; // 18 + 14 + 2 = 34
+        int min_y = win->y + 4;
+        Framebuffer::DrawRect(min_x, min_y, 14, 14, 0xC0C0C0);
+        Framebuffer::DrawRect(min_x, min_y, 14, 1, 0xFFFFFF);
+        Framebuffer::DrawRect(min_x, min_y, 1, 14, 0xFFFFFF);
+        Framebuffer::DrawRect(min_x + 13, min_y, 1, 14, 0x000000);
+        Framebuffer::DrawRect(min_x, min_y + 13, 14, 1, 0x000000);
+        Framebuffer::DrawString("_", min_x + 3, min_y + 3, 0x000000, 0xC0C0C0);
         
         // Rysuj zawartość Aplikacji
         int content_x = win->x + 2;
@@ -357,21 +413,25 @@ void Compositor::Render() {
         // Check hover/click na taskbarze
         bool is_hover = (mouse_x >= tb_x && mouse_x <= tb_x + w_btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h);
         if (is_hover && mouse_clicked && !start_menu_open) {
-            // Przenieś to okno na samą górę w 'windows' (Z-Order)
-            int z_index = -1;
-            for (int j = 0; j < window_count; j++) {
-                if (windows[j] == win) {
-                    z_index = j;
-                    break;
+            if (is_top && !win->is_minimized) {
+                win->is_minimized = true;
+            } else {
+                win->is_minimized = false;
+                // Przenieś to okno na samą górę w 'windows' (Z-Order)
+                int z_index = -1;
+                for (int j = 0; j < window_count; j++) {
+                    if (windows[j] == win) {
+                        z_index = j;
+                        break;
+                    }
+                }
+                if (z_index != -1) {
+                    for (int j = z_index; j < window_count - 1; j++) {
+                        windows[j] = windows[j + 1];
+                    }
+                    windows[window_count - 1] = win;
                 }
             }
-            if (z_index != -1) {
-                for (int j = z_index; j < window_count - 1; j++) {
-                    windows[j] = windows[j + 1];
-                }
-                windows[window_count - 1] = win;
-            }
-            is_top = true;
         }
         
         // Truncate title
@@ -409,7 +469,7 @@ void Compositor::Render() {
     static uint32_t hover_frames = 0;
     
     if (start_menu_open) {
-        int menu_w = 160;
+        int menu_w = 180;
         int menu_h = 240;
         int menu_y = screen_h - taskbar_h - menu_h;
         
@@ -419,45 +479,69 @@ void Compositor::Render() {
         Framebuffer::DrawRect(menu_w - 2, menu_y, 2, menu_h, 0x000000); // shadow right
         Framebuffer::DrawRect(0, menu_y + menu_h - 2, menu_w, 2, 0x000000); // shadow bottom
         
-        // Pasek Boczny
-        Framebuffer::DrawRect(2, menu_y + 2, 24, menu_h - 4, 0x000080);
+        // Pasek Boczny (Win95 style dark blue)
+        Framebuffer::DrawRect(2, menu_y + 2, 32, menu_h - 4, 0x0000A0);
         
         const char* os_name = "OxideOS";
         int banner_y = menu_y + menu_h - 80;
         for (int i = 0; os_name[i]; i++) {
-            Framebuffer::DrawChar(os_name[i], 10, banner_y + i * 10, 0xFFFFFF, 0x000080);
+            // Rysowanie znaków pionowo na pasku
+            Framebuffer::DrawChar(os_name[i], 14, banner_y + i * 10, 0xFFFFFF, 0x0000A0);
         }
         
         const char* menu_items[] = {
             "Programy >",
             "Kalkulator",
-            "Ustawienia"
+            "Ustawienia",
+            "Zegar",
+            "---", // Separator
+            "O Systemie"
         };
         
         int item_y = menu_y + 4;
         bool any_program_hovered = false;
         
-        for (int i = 0; i < 3; i++) {
-            int bx = 28;
-            int by = item_y + i * 22; // Zmniejszono odstęp z 26 na 22
-            int bw = menu_w - 32;
-            int bh = 20; // Zmniejszono wysokość przycisków z 24 na 20
+        for (int i = 0; i < 6; i++) {
+            int bx = 36;
+            int by = item_y + i * 24;
+            int bw = menu_w - 40;
+            int bh = 24;
+            
+            // Obsługa separatora
+            if (menu_items[i][0] == '-') {
+                int sep_y = by + (bh / 2);
+                Framebuffer::DrawRect(bx, sep_y, bw, 1, 0x808080); // Ciemniejsza krawędź
+                Framebuffer::DrawRect(bx, sep_y + 1, bw, 1, 0xFFFFFF); // Jasna krawędź
+                continue;
+            }
             
             bool is_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
-            bool is_pressed = (is_hover && mouse_left);
             
             if (i == 0 && is_hover) any_program_hovered = true;
             
-            DrawButton(bx, by, bw, bh, menu_items[i], is_pressed);
+            uint32_t item_bg = is_hover ? 0x0000A0 : 0xC0C0C0; // Win95 Hover: Dark Blue
+            uint32_t item_fg = is_hover ? 0xFFFFFF : 0x000000; // Win95 Hover Text: White
+            
+            Framebuffer::DrawRect(bx, by, bw, bh, item_bg);
+            
+            // Miejsce na ikonę (np. bx + 4) będzie tutaj ładowane z VFS w przyszłości.
+            // Tekst:
+            Framebuffer::DrawString(menu_items[i], bx + 28, by + (bh - 8) / 2, item_fg, item_bg);
             
             if (is_hover && mouse_clicked) {
                 extern void ExecAppTask(void*);
                 
                 if (i == 1) { // Kalkulator
-                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/CALC.ELF");
+                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/CALC.ELF");
                     start_menu_open = false;
-                } else if (i == 2) { // Notatnik
-                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/SETTINGS.ELF"); // Tymczasowo Notatnik odpala Ustawienia dla testu, potem można usunąć lub podmienić
+                } else if (i == 2) { // Ustawienia
+                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/SETTINGS.ELF");
+                    start_menu_open = false;
+                } else if (i == 3) { // Zegar
+                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/CLOCK.ELF");
+                    start_menu_open = false;
+                } else if (i == 5) { // O Systemie (przesunięty o 1 z powodu separatora)
+                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/WINVER.ELF");
                     start_menu_open = false;
                 }
             }
@@ -470,8 +554,8 @@ void Compositor::Render() {
             hover_frames = 0;
         }
         
-        int sub_w = 120;
-        int sub_h = 60;
+        int sub_w = 150;
+        int sub_h = 104;
         int sub_x = menu_w - 2;
         int sub_y = item_y; // na wysokosci "Programy >"
         
@@ -488,27 +572,34 @@ void Compositor::Render() {
                 Framebuffer::DrawRect(sub_x + sub_w - 2, sub_y, 2, sub_h, 0x000000);
                 Framebuffer::DrawRect(sub_x, sub_y + sub_h - 2, sub_w, 2, 0x000000);
                 
-                const char* sub_items[] = { "Kalendarz", "Paint" };
-                for (int j = 0; j < 2; j++) {
+                const char* sub_items[] = { "Kalendarz", "Paint", "OxidePad", "Menedzer Zadan" };
+                for (int j = 0; j < 4; j++) {
                     int bx = sub_x + 4;
-                    int by = sub_y + 4 + j * 22;
+                    int by = sub_y + 4 + j * 24;
                     int bw = sub_w - 8;
-                    int bh = 20;
+                    int bh = 24;
                     
                     bool s_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
-                    bool s_pressed = (s_hover && mouse_left);
-                    DrawButton(bx, by, bw, bh, sub_items[j], s_pressed);
+                    
+                    uint32_t s_bg = s_hover ? 0x0000A0 : 0xC0C0C0;
+                    uint32_t s_fg = s_hover ? 0xFFFFFF : 0x000000;
+                    
+                    Framebuffer::DrawRect(bx, by, bw, bh, s_bg);
+                    Framebuffer::DrawString(sub_items[j], bx + 28, by + (bh - 8) / 2, s_fg, s_bg);
+
                     
                     if (s_hover && mouse_clicked) {
                         if (j == 0) { // Kalendarz
-                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/CALENDAR.ELF");
-                            start_menu_open = false;
-                            programs_hovered_persistent = false;
+                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/CALENDAR.ELF");
                         } else if (j == 1) { // Paint
-                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/PAINT.ELF");
-                            start_menu_open = false;
-                            programs_hovered_persistent = false;
+                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/PAINT.ELF");
+                        } else if (j == 2) { // OxidePad
+                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/NOTEPAD.ELF");
+                        } else if (j == 3) { // Taskmgr
+                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/TASKMGR.ELF");
                         }
+                        start_menu_open = false;
+                        programs_hovered_persistent = false;
                     }
                 }
             }
