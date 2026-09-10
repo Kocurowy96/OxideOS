@@ -4,6 +4,7 @@ iso_root/
 *.iso
 *.o
 *.elf
+*.ELF
 .serenity
 disk.img
 *.iso
@@ -12,3 +13,11 @@ qemu_audio.wav
 kocurowy96-moje_rzeczy_do_dev/
 TODO_ASSETS.md
 grafiki_do_zrobienia.md
+
+# Assety BMP wygenerowane automatycznie przez scripts/run.sh z plikow .png
+# (trzymamy w repo tylko zrodla .png; wyjatki nizej to oryginalne bitmapy bez zrodla .png)
+assets/*.bmp
+!assets/wp1.bmp
+!assets/wp2.bmp
+!assets/wp3.bmp
+!assets/winver.bmp

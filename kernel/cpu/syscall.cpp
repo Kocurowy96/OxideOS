@@ -21,23 +21,27 @@ static Window sys_windows[32] = {
     Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,"")
 };
 
-static void CleanupTaskWindows(uint64_t task_id) {
-    Compositor::RemoveWindowsByTaskId(task_id);
+// Oznacza okna do usunięcia - Compositor sprząta je na początku następnej klatki
+static void MarkTaskWindowsForRemoval(uint64_t task_id) {
     for (int i = 0; i < 32; i++) {
         if (sys_windows[i].active && sys_windows[i].owner_task_id == task_id) {
-            sys_windows[i].active = false;
-            // Obliczamy ilość stron do zwolnienia tak samo jak przy alokacji
-            int w = sys_windows[i].width;
-            int h = sys_windows[i].height;
-            size_t size = w * h * 4;
-            size_t pages = (size + 4095) / 4096;
-            if (sys_windows[i].phys_fb_buffer) {
-                PMM::FreePages(sys_windows[i].phys_fb_buffer, pages);
-                sys_windows[i].phys_fb_buffer = nullptr;
-                sys_windows[i].fb_buffer = nullptr;
-            }
+            sys_windows[i].pending_remove = true;
         }
     }
+}
+
+// Wywoływane przez Compositor po bezpiecznym zakończeniu klatki
+void Syscall::FreeWindowMemory(Window* win) {
+    if (!win || !win->phys_fb_buffer) return;
+    int w = win->width;
+    int h = win->height;
+    size_t size = (size_t)w * h * 4;
+    size_t pages = (size + 4095) / 4096;
+    PMM::FreePages(win->phys_fb_buffer, pages);
+    win->phys_fb_buffer = nullptr;
+    win->fb_buffer = nullptr;
+    win->active = false;
+    win->pending_remove = false;
 }
 
 void Syscall::Handler(Registers* regs) {
@@ -48,7 +52,8 @@ void Syscall::Handler(Registers* regs) {
         SerialPort::WriteString(str);
     } else if (syscall_num == 2) { // sys_exit
         SerialPort::WriteString("Syscall: sys_exit called. Killing task...\n");
-        CleanupTaskWindows(Scheduler::GetCurrentTaskId());
+        // Oznacz okna jako do usunięcia - Compositor zrobi to bezpiecznie między klatkami
+        MarkTaskWindowsForRemoval(Scheduler::GetCurrentTaskId());
         Scheduler::KillCurrentTask();
         asm volatile("sti");
         while(1) {
@@ -192,11 +197,11 @@ void Syscall::Handler(Registers* regs) {
         }
         
         if (target_win) {
-            uint8_t* buffer = nullptr;
-            uint32_t size = 0;
-            if (VFS::ReadFile(path, &buffer, &size)) {
-                BMP::DrawToBuffer(buffer, target_win->fb_buffer, target_win->width - 4, target_win->height - 22, x, y);
-                VFS::FreeFile(buffer, size);
+            uint8_t* bmp_buf = nullptr;
+            uint32_t bmp_size = 0;
+            if (VFS::ReadFile(path, &bmp_buf, &bmp_size)) {
+                BMP::DrawToBuffer(bmp_buf, target_win->fb_buffer, target_win->width - 4, target_win->height - 22, x, y);
+                VFS::FreeFile(bmp_buf, bmp_size);
                 regs->rax = 1;
             } else {
                 regs->rax = 0;
@@ -211,35 +216,8 @@ void Syscall::Handler(Registers* regs) {
     } else if (syscall_num == 56) { // sys_kill_task
         uint64_t task_id = regs->rdi;
         if (Scheduler::KillTaskById(task_id)) {
-            CleanupTaskWindows(task_id);
+            MarkTaskWindowsForRemoval(task_id);
             regs->rax = 1;
-        } else {
-            regs->rax = 0;
-        }
-    } else if (syscall_num == 57) { // sys_draw_bmp
-        int win_id = regs->rdi;
-        const char* path = (const char*)regs->rsi;
-        int draw_x = regs->rdx;
-        int draw_y = regs->r10;
-        
-        Window* win = nullptr;
-        for (int i = 0; i < 32; i++) {
-            if (sys_windows[i].id == win_id && sys_windows[i].active) {
-                win = &sys_windows[i];
-                break;
-            }
-        }
-        
-        if (win && win->fb_buffer) {
-            uint8_t* bmp_buf = nullptr;
-            uint32_t bmp_size = 0;
-            if (VFS::ReadFile(path, &bmp_buf, &bmp_size)) {
-                BMP::DrawToBuffer(bmp_buf, win->fb_buffer, win->width - 4, win->height - 22, draw_x, draw_y);
-                VFS::FreeFile(bmp_buf, bmp_size);
-                regs->rax = 1;
-            } else {
-                regs->rax = 0;
-            }
         } else {
             regs->rax = 0;
         }

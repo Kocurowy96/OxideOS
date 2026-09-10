@@ -40,9 +40,9 @@ static void strcat(char* dest, const char* src) {
 
 void _start() {
     uint32_t* fb = 0;
-    int win_w = 460;
-    int win_h = 320;
-    int win_id = sys_create_window("O Systemie (WINVER)", win_w, win_h, 440, 240, &fb);
+    int win_w = 500;
+    int win_h = 360;
+    int win_id = sys_create_window("O Systemie (WINVER)", win_w, win_h, 400, 200, &fb);
     
     if (win_id < 0 || !fb) {
         sys_print("Failed to create Winver window\n");
@@ -52,11 +52,11 @@ void _start() {
     gui_draw_rect(fb, win_w, 0, 0, win_w, win_h, 0xC0C0C0);
     
     // Narysujemy logo (winver.bmp)
-    // Szerokosc baneru to 400px. Okno ma 460px. (460 - 400) / 2 = 30.
-    sys_draw_bmp(win_id, "/winver.bmp", 30, 15);
+    // Szerokosc baneru to 400px. Okno ma 500px. (500 - 400) / 2 = 50.
+    sys_draw_bmp(win_id, "/winver.bmp", 50, 20);
     
-    gui_draw_string(fb, win_w, "System operacyjny OxideOS", 30, 180, 0x000000, 0xC0C0C0);
-    gui_draw_string(fb, win_w, "Stworzony z pomoca Antigravity", 30, 195, 0x000000, 0xC0C0C0);
+    gui_draw_string(fb, win_w, "System operacyjny OxideOS", 50, 180, 0x000000, 0xC0C0C0);
+    gui_draw_string(fb, win_w, "Stworzony z pomoca Antigravity", 50, 200, 0x000000, 0xC0C0C0);
     
     uint64_t total_mem = 0;
     uint64_t free_mem = 0;
@@ -73,7 +73,7 @@ void _start() {
     strcat(mem_str, num_buf);
     strcat(mem_str, " MB)");
     
-    gui_draw_string(fb, win_w, mem_str, 30, 225, 0x000000, 0xC0C0C0);
+    gui_draw_string(fb, win_w, mem_str, 50, 230, 0x000000, 0xC0C0C0);
     
     // Narysuj przycisk "OK"
     int btn_w = 80;

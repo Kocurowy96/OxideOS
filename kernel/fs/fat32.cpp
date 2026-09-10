@@ -49,6 +49,63 @@ static bool str_eq_83(const char* name_83, const char* search_path) {
     return true;
 }
 
+// ---- LFN (Long File Name) helpers ----
+
+// Wyciąga 13 znaków UTF-16LE z wpisu LFN i zapisuje jako ASCII do buf[offset..offset+13]
+static void extract_lfn_chars(const uint8_t* entry, char* buf, int offset) {
+    // Offsets w 32-bajtowym wpisie LFN: 1-10 (5 znaków), 14-25 (6 znaków), 28-31 (2 znaki)
+    static const int lfn_offsets[] = {1,3,5,7,9, 14,16,18,20,22,24, 28,30};
+    for (int i = 0; i < 13; i++) {
+        uint16_t ch = (uint16_t)entry[lfn_offsets[i]] | ((uint16_t)entry[lfn_offsets[i]+1] << 8);
+        if (ch == 0xFFFF || ch == 0x0000) {
+            buf[offset + i] = '\0';
+        } else if (ch < 128) {
+            buf[offset + i] = (char)ch;
+        } else {
+            buf[offset + i] = '?'; // znaki spoza ASCII
+        }
+    }
+}
+
+// Porównuje zebrany LFN z szukaną nazwą (case-insensitive)
+static bool str_eq_lfn(const char* lfn, const char* search) {
+    int i = 0;
+    while (lfn[i] != '\0' && search[i] != '\0') {
+        char a = lfn[i], b = search[i];
+        if (a >= 'A' && a <= 'Z') a += 32;
+        if (b >= 'A' && b <= 'Z') b += 32;
+        if (a != b) return false;
+        i++;
+    }
+    return lfn[i] == '\0' && search[i] == '\0';
+}
+
+// Bufor na zebrany LFN (max 255 znaków + null)
+static char lfn_buf[256];
+static int  lfn_entries_collected = 0;
+
+// Inicjuje bufor LFN przed skanowaniem katalogu
+static void lfn_reset() {
+    for (int i = 0; i < 256; i++) lfn_buf[i] = '\0';
+    lfn_entries_collected = 0;
+}
+
+// Dodaje jeden wpis LFN do bufora
+static void lfn_add_entry(const uint8_t* entry) {
+    int seq = entry[0] & 0x3F; // numer wpisu (1-based)
+    int offset = (seq - 1) * 13;
+    if (offset >= 0 && offset + 13 <= 255) {
+        extract_lfn_chars(entry, lfn_buf, offset);
+        lfn_entries_collected++;
+    }
+}
+
+// Sprawdza czy zebrany LFN pasuje do szukanej nazwy
+static bool lfn_matches(const char* search) {
+    if (lfn_entries_collected == 0) return false;
+    return str_eq_lfn(lfn_buf, search);
+}
+
 void FAT32::FreeFile(uint8_t* buffer, uint32_t size) {
     if (!buffer) return;
     void* phys_ptr = (void*)((uint64_t)buffer - hhdm_request.response->offset);
@@ -153,17 +210,18 @@ static uint32_t FindDirectoryCluster(const char* path, char* filename) {
             uint32_t lba = GetClusterLBA(iter_cluster);
             for (int i = 0; i < sectors_per_cluster; i++) {
                 if (!ATA::ReadSector(lba + i, sector)) return 0;
-                
+                lfn_reset();
                 for (int entry = 0; entry < 512; entry += 32) {
                     if (sector[entry] == 0x00) break;
-                    if (sector[entry] == 0xE5) continue;
-                    if (sector[entry + 11] == 0x0F) continue;
-                    if (!(sector[entry + 11] & 0x10)) continue; 
+                    if (sector[entry] == 0xE5) { lfn_reset(); continue; }
+                    if (sector[entry + 11] == 0x0F) { lfn_add_entry(&sector[entry]); continue; }
+                    if (!(sector[entry + 11] & 0x10)) { lfn_reset(); continue; }
                     
-                    if (str_eq_83((const char*)&sector[entry], token)) {
+                    if (lfn_matches(token) || str_eq_83((const char*)&sector[entry], token)) {
                         next_cluster = ((uint32_t)*(uint16_t*)&sector[entry + 20] << 16) | *(uint16_t*)&sector[entry + 26];
                         break;
                     }
+                    lfn_reset();
                 }
                 if (next_cluster) break;
                 
@@ -172,6 +230,7 @@ static uint32_t FindDirectoryCluster(const char* path, char* filename) {
                     if (sector[entry] == 0x00) { has_zero = true; break; }
                 }
                 if (has_zero) break;
+                lfn_reset();
             }
             if (next_cluster) break;
             iter_cluster = GetNextCluster(iter_cluster);
@@ -233,19 +292,22 @@ bool FAT32::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size)
         uint32_t lba = GetClusterLBA(current_cluster);
         for (int i = 0; i < sectors_per_cluster; i++) {
             if (!ATA::ReadSector(lba + i, sector)) return false;
-            
+            lfn_reset();
             for (int entry = 0; entry < 512; entry += 32) {
                 if (sector[entry] == 0x00) break;
-                if (sector[entry] == 0xE5) continue;
-                if (sector[entry + 11] == 0x0F) continue;
-                if (sector[entry + 11] & 0x08) continue;
-                if (sector[entry + 11] & 0x10) continue;
+                if (sector[entry] == 0xE5) { lfn_reset(); continue; }
+                // Wpis LFN - zbierz
+                if (sector[entry + 11] == 0x0F) { lfn_add_entry(&sector[entry]); continue; }
+                // Pomiń wpisy woluminowe i katalogowe
+                if (sector[entry + 11] & 0x08) { lfn_reset(); continue; }
+                if (sector[entry + 11] & 0x10) { lfn_reset(); continue; }
                 
-                if (str_eq_83((const char*)&sector[entry], filename)) {
+                if (lfn_matches(filename) || str_eq_83((const char*)&sector[entry], filename)) {
                     target_cluster = ((uint32_t)*(uint16_t*)&sector[entry + 20] << 16) | *(uint16_t*)&sector[entry + 26];
                     file_size = *(uint32_t*)&sector[entry + 28];
                     break;
                 }
+                lfn_reset();
             }
             if (target_cluster) break;
             
@@ -254,6 +316,7 @@ bool FAT32::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size)
                 if (sector[entry] == 0x00) { has_zero = true; break; }
             }
             if (has_zero) break;
+            lfn_reset();
         }
         if (target_cluster) break;
         current_cluster = GetNextCluster(current_cluster);
@@ -276,15 +339,35 @@ bool FAT32::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size)
     current_cluster = target_cluster;
     
     while (current_cluster < 0x0FFFFFF8 && bytes_read < file_size) {
-        uint32_t lba = GetClusterLBA(current_cluster);
-        for (int i = 0; i < sectors_per_cluster && bytes_read < file_size; i++) {
-            if (!ATA::ReadSector(lba + i, sector)) return false;
-            uint32_t to_copy = 512;
-            if (file_size - bytes_read < 512) to_copy = file_size - bytes_read;
-            mem_cpy(v_ptr + bytes_read, sector, to_copy);
-            bytes_read += to_copy;
+        uint32_t start_cluster = current_cluster;
+        uint32_t num_clusters = 1;
+        uint32_t next_cluster = GetNextCluster(current_cluster);
+        
+        // Merge contiguous clusters (up to 255 sectors total)
+        while (next_cluster == current_cluster + 1 && next_cluster < 0x0FFFFFF8 && (num_clusters + 1) * sectors_per_cluster <= 255) {
+            num_clusters++;
+            current_cluster = next_cluster;
+            next_cluster = GetNextCluster(current_cluster);
         }
-        current_cluster = GetNextCluster(current_cluster);
+        
+        uint32_t lba = GetClusterLBA(start_cluster);
+        uint32_t bytes_left = file_size - bytes_read;
+        uint32_t sectors_to_read = num_clusters * sectors_per_cluster;
+        
+        if (bytes_left < sectors_to_read * 512) {
+            sectors_to_read = (bytes_left + 511) / 512;
+        }
+        
+        // Read directly into virtual memory (safe because we allocated page-aligned memory)
+        if (!ATA::ReadSectors(lba, sectors_to_read, v_ptr + bytes_read)) return false;
+        
+        if (bytes_left >= sectors_to_read * 512) {
+            bytes_read += sectors_to_read * 512;
+        } else {
+            bytes_read += bytes_left;
+        }
+        
+        current_cluster = next_cluster;
     }
     
     SerialPort::WriteString("FAT32: File loaded successfully.\n");
@@ -314,25 +397,29 @@ bool FAT32::WriteFile(const char* path, const uint8_t* buffer, uint32_t size) {
         uint32_t lba = GetClusterLBA(iter_cluster);
         for (int i = 0; i < sectors_per_cluster; i++) {
             if (!ATA::ReadSector(lba + i, sector)) return false;
+            lfn_reset();
             for (int entry = 0; entry < 512; entry += 32) {
                 if (sector[entry] == 0x00 || sector[entry] == 0xE5) {
-                    if (empty_lba == 0) {
+                    if (empty_lba == 0 && (sector[entry] == 0x00 || sector[entry] == 0xE5)) {
                         empty_lba = lba + i;
                         empty_offset = entry;
                     }
                     if (sector[entry] == 0x00) break;
+                    lfn_reset();
                     continue;
                 }
-                if (sector[entry + 11] == 0x0F) continue;
-                if (sector[entry + 11] & 0x08) continue;
-                if (sector[entry + 11] & 0x10) continue;
+                // Wpis LFN - zbierz
+                if (sector[entry + 11] == 0x0F) { lfn_add_entry(&sector[entry]); continue; }
+                if (sector[entry + 11] & 0x08) { lfn_reset(); continue; }
+                if (sector[entry + 11] & 0x10) { lfn_reset(); continue; }
                 
-                if (str_eq_83((const char*)&sector[entry], filename)) {
+                if (lfn_matches(filename) || str_eq_83((const char*)&sector[entry], filename)) {
                     target_cluster = ((uint32_t)*(uint16_t*)&sector[entry + 20] << 16) | *(uint16_t*)&sector[entry + 26];
                     dir_entry_lba = lba + i;
                     dir_entry_offset = entry;
                     break;
                 }
+                lfn_reset();
             }
             if (target_cluster) break;
             
@@ -341,6 +428,7 @@ bool FAT32::WriteFile(const char* path, const uint8_t* buffer, uint32_t size) {
                 if (sector[entry] == 0x00) { has_zero = true; break; }
             }
             if (has_zero) break;
+            lfn_reset();
         }
         if (target_cluster) break;
         iter_cluster = GetNextCluster(iter_cluster);

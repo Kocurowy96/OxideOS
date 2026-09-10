@@ -39,6 +39,16 @@ void Framebuffer::PutPixel(int32_t x, int32_t y, uint32_t color) {
     }
 }
 
+uint32_t Framebuffer::GetPixel(int32_t x, int32_t y) {
+    if (!fb || x < 0 || y < 0 || (uint32_t)x >= fb->width || (uint32_t)y >= fb->height) return 0;
+    if (backbuffer) {
+        return backbuffer[y * fb->width + x];
+    } else {
+        uint32_t* screen = (uint32_t*)fb->address;
+        return screen[y * (fb->pitch / 4) + x];
+    }
+}
+
 void Framebuffer::SwapBuffers() {
     if (!fb || !backbuffer) return;
     uint32_t* screen = (uint32_t*)fb->address;

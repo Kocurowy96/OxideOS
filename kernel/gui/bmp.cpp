@@ -40,10 +40,30 @@ void BMP::Draw(void* bmp_data, int32_t x, int32_t y) {
             uint8_t b = row_data[col * bytes_per_pixel];
             uint8_t g = row_data[col * bytes_per_pixel + 1];
             uint8_t r = row_data[col * bytes_per_pixel + 2];
-            // alpha is ignored for 24-bit, and for 32-bit it's byte 3 (not always reliable)
-            uint32_t color = (r << 16) | (g << 8) | b;
+            uint8_t a = (bytes_per_pixel == 4) ? row_data[col * bytes_per_pixel + 3] : 255;
             
-            Framebuffer::PutPixel(x + col, y + row, color);
+            // Fallback for 24-bit: magenta is transparent
+            if (bytes_per_pixel == 3 && r == 255 && g == 0 && b == 255) a = 0;
+            
+            if (a == 0) continue;
+            
+            int draw_x = x + col;
+            int draw_y = y + row;
+            
+            if (a == 255) {
+                Framebuffer::PutPixel(draw_x, draw_y, (r << 16) | (g << 8) | b);
+            } else {
+                uint32_t bg = Framebuffer::GetPixel(draw_x, draw_y);
+                uint8_t bg_r = (bg >> 16) & 0xFF;
+                uint8_t bg_g = (bg >> 8) & 0xFF;
+                uint8_t bg_b = bg & 0xFF;
+                
+                uint8_t final_r = (r * a + bg_r * (255 - a)) / 255;
+                uint8_t final_g = (g * a + bg_g * (255 - a)) / 255;
+                uint8_t final_b = (b * a + bg_b * (255 - a)) / 255;
+                
+                Framebuffer::PutPixel(draw_x, draw_y, (final_r << 16) | (final_g << 8) | final_b);
+            }
         }
     }
 }
@@ -72,12 +92,29 @@ void BMP::DrawToBuffer(void* bmp_data, uint32_t* buffer, int buf_w, int buf_h, i
             uint8_t b = row_data[col * bytes_per_pixel];
             uint8_t g = row_data[col * bytes_per_pixel + 1];
             uint8_t r = row_data[col * bytes_per_pixel + 2];
-            uint32_t color = (r << 16) | (g << 8) | b;
+            uint8_t a = (bytes_per_pixel == 4) ? row_data[col * bytes_per_pixel + 3] : 255;
+            
+            if (bytes_per_pixel == 3 && r == 255 && g == 0 && b == 255) a = 0;
+            
+            if (a == 0) continue;
             
             int draw_x = x + col;
             int draw_y = y + row;
             if (draw_x >= 0 && draw_x < buf_w && draw_y >= 0 && draw_y < buf_h) {
-                buffer[draw_y * buf_w + draw_x] = color;
+                if (a == 255) {
+                    buffer[draw_y * buf_w + draw_x] = (r << 16) | (g << 8) | b;
+                } else {
+                    uint32_t bg = buffer[draw_y * buf_w + draw_x];
+                    uint8_t bg_r = (bg >> 16) & 0xFF;
+                    uint8_t bg_g = (bg >> 8) & 0xFF;
+                    uint8_t bg_b = bg & 0xFF;
+                    
+                    uint8_t final_r = (r * a + bg_r * (255 - a)) / 255;
+                    uint8_t final_g = (g * a + bg_g * (255 - a)) / 255;
+                    uint8_t final_b = (b * a + bg_b * (255 - a)) / 255;
+                    
+                    buffer[draw_y * buf_w + draw_x] = (final_r << 16) | (final_g << 8) | final_b;
+                }
             }
         }
     }

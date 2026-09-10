@@ -15,6 +15,9 @@ public:
     static void RemoveWindow(Window* win);
     static void RemoveWindowsByTaskId(uint64_t task_id);
     static Window* GetWindowById(int id);
+    static void BringToFront(Window* win);
+    
+    static volatile bool is_rendering;
     
     static void HandleKeyPress(char c);
     
@@ -24,6 +27,7 @@ private:
     static int window_count;
 
     static void* icon_bmp;
+    static void* cursor_bmp;
 
     // Zmienne stanu GUI
     static bool prev_mouse_left;

@@ -1,6 +1,7 @@
 #include "compositor.h"
 #include "fb.h"
 #include "bmp.h"
+#include "../cpu/syscall.h"
 #include "../drivers/ps2_mouse.h"
 #include "../drivers/ac97.h"
 #include "../drivers/rtc.h"
@@ -25,10 +26,17 @@ extern volatile struct limine_hhdm_request hhdm_request;
 
 static void* bg_bmp = nullptr;
 void* Compositor::icon_bmp = nullptr;
+void* Compositor::cursor_bmp = nullptr;
+static void* icon_programy = nullptr;
+static void* icon_clock = nullptr;
+static void* icon_folder_32 = nullptr;
+static void* icon_settings = nullptr; // For later if added
+static void* icon_speaker = nullptr;
 
 Window* Compositor::windows[MAX_WINDOWS];
 Window* Compositor::taskbar_windows[MAX_WINDOWS];
 int Compositor::window_count = 0;
+volatile bool Compositor::is_rendering = false;
 
 bool Compositor::AddWindow(Window* win) {
     if (window_count >= MAX_WINDOWS) return false;
@@ -46,73 +54,103 @@ void Compositor::RemoveWindow(Window* win) {
             break;
         }
     }
-    if (index != -1) {
-        for (int i = index; i < window_count - 1; i++) {
-            windows[i] = windows[i + 1];
-        }
+    if (index == -1) return;
+    for (int i = index; i < window_count - 1; i++) {
+        windows[i] = windows[i + 1];
     }
-    
-    int tb_index = -1;
-    for (int i = 0; i < window_count; i++) {
-        if (taskbar_windows[i] == win) {
-            tb_index = i;
-            break;
-        }
-    }
-    if (tb_index != -1) {
-        for (int i = tb_index; i < window_count - 1; i++) {
-            taskbar_windows[i] = taskbar_windows[i + 1];
-        }
-    }
-    
-    if (index != -1 && tb_index != -1) {
-        window_count--;
-    }
+    window_count--;
 }
 
 void Compositor::RemoveWindowsByTaskId(uint64_t task_id) {
-    for (int i = window_count - 1; i >= 0; i--) {
+    for (int i = 0; i < window_count; i++) {
         if (windows[i]->owner_task_id == task_id) {
-            RemoveWindow(windows[i]);
+            windows[i]->pending_remove = true;
         }
     }
 }
 
 Window* Compositor::GetWindowById(int id) {
     for (int i = 0; i < window_count; i++) {
-        if (windows[i]->id == id) {
-            return windows[i];
-        }
+        if (windows[i]->id == id) return windows[i];
     }
     return nullptr;
 }
 
-void Compositor::InitWallpaper() {
-    char bg_name[32] = "/bg.bmp";
-    uint8_t* cfg_buf = nullptr;
-    uint32_t cfg_size = 0;
-    
-    if (VFS::ReadFile("/DOCS/CONFIG.DAT", &cfg_buf, &cfg_size)) {
-        if (cfg_size > 0 && cfg_size < 32) {
-            for (uint32_t i = 0; i < cfg_size; i++) {
-                bg_name[i] = (char)cfg_buf[i];
-            }
-            bg_name[cfg_size] = '\0';
+void Compositor::BringToFront(Window* win) {
+    int index = -1;
+    for (int i = 0; i < window_count; i++) {
+        if (windows[i] == win) {
+            index = i;
+            break;
         }
     }
-    
+    if (index == -1 || index == window_count - 1) return;
+    for (int i = index; i < window_count - 1; i++) {
+        windows[i] = windows[i + 1];
+    }
+    windows[window_count - 1] = win;
+}
+
+static int frame_count = 0;
+static uint32_t last_ticks = 0;
+static int fps = 0;
+static char fps_str[16];
+
+static bool prev_mouse_left = false;
+static bool start_menu_open = false;
+static int hover_frames = 0;
+static bool programs_hovered_persistent = false;
+
+void itoa(int n, char* buffer) {
+    int i = 0;
+    if (n == 0) {
+        buffer[i++] = '0';
+        buffer[i] = '\0';
+        return;
+    }
+    while (n > 0) {
+        buffer[i++] = (n % 10) + '0';
+        n /= 10;
+    }
+    buffer[i] = '\0';
+    // odwróć string
+    for (int j = 0; j < i / 2; j++) {
+        char temp = buffer[j];
+        buffer[j] = buffer[i - j - 1];
+        buffer[i - j - 1] = temp;
+    }
+}
+
+void Compositor::InitWallpaper() {
     uint8_t* buffer = nullptr;
     uint32_t size = 0;
     
-    if (VFS::ReadFile(bg_name, &buffer, &size)) {
-        bg_bmp = buffer;
-        SerialPort::WriteString("Compositor: Loaded configured wallpaper!\n");
-    } else {
+    // Próbujemy wczytać z ustawień
+    if (VFS::ReadFile("/DOCS/CONFIG.DAT", &buffer, &size)) {
+        if (size >= 12 && buffer[0] == 'W' && buffer[1] == 'P' && buffer[2] == '=') {
+            char wp_path[32];
+            int i = 0;
+            for(i=0; i<31 && i < size-3; i++) {
+                if(buffer[i+3] == '\n' || buffer[i+3] == '\r') break;
+                wp_path[i] = buffer[i+3];
+            }
+            wp_path[i] = '\0';
+            
+            uint8_t* wp_buf = nullptr;
+            uint32_t wp_size = 0;
+            if (VFS::ReadFile(wp_path, &wp_buf, &wp_size)) {
+                bg_bmp = wp_buf;
+                SerialPort::WriteString("Compositor: Loaded configured wallpaper!\n");
+            }
+        }
+        delete[] buffer;
+    }
+    
+    // Fallback: szukamy bg.bmp (jak kiedyś)
+    if (!bg_bmp) {
         if (VFS::ReadFile("/bg.bmp", &buffer, &size)) {
             bg_bmp = buffer;
-            SerialPort::WriteString("Compositor: Loaded default bg.bmp\n");
-        } else {
-            SerialPort::WriteString("Compositor: Failed to load any wallpaper.\n");
+            SerialPort::WriteString("Compositor: Loaded default background (bg.bmp).\n");
         }
     }
 }
@@ -128,8 +166,39 @@ void Compositor::Init() {
     } else {
         SerialPort::WriteString("Compositor: Failed to load icon.bmp from VFS.\n");
     }
-}
 
+    uint8_t* cur_buf = nullptr;
+    uint32_t cur_size = 0;
+    if (VFS::ReadFile("/cursor_normal.bmp", &cur_buf, &cur_size)) {
+        cursor_bmp = cur_buf;
+        SerialPort::WriteString("Compositor: Loaded cursor_normal.bmp from VFS!\n");
+    } else {
+        SerialPort::WriteString("Compositor: Failed to load cursor_normal.bmp from VFS.\n");
+    }
+    uint8_t* prog_buf = nullptr;
+    uint32_t prog_size = 0;
+    if (VFS::ReadFile("/icon_programy.bmp", &prog_buf, &prog_size)) {
+        icon_programy = prog_buf;
+    }
+    
+    uint8_t* clock_buf = nullptr;
+    uint32_t clock_size = 0;
+    if (VFS::ReadFile("/icon_clock.bmp", &clock_buf, &clock_size)) {
+        icon_clock = clock_buf;
+    }
+    
+    uint8_t* folder_buf = nullptr;
+    uint32_t folder_size = 0;
+    if (VFS::ReadFile("/icon_folder.bmp", &folder_buf, &folder_size)) {
+        icon_folder_32 = folder_buf;
+    }
+    
+    uint8_t* speaker_buf = nullptr;
+    uint32_t speaker_size = 0;
+    if (VFS::ReadFile("/icon_speaker.bmp", &speaker_buf, &speaker_size)) {
+        icon_speaker = speaker_buf;
+    }
+}
 void Compositor::HandleKeyPress(char c) {
     if (window_count > 0) {
         Window* top_win = nullptr;
@@ -182,7 +251,25 @@ static void DrawButton(int x, int y, int w, int h, const char* text, bool presse
 }
 
 void Compositor::Render() {
-    // 0. Update Input State
+    is_rendering = true;
+
+    // 0a. Deferred cleanup - bezpieczne zwalnianie pamięci okien między klatkami
+    for (int i = 0; i < window_count; ) {
+        Window* win = windows[i];
+        if (win->pending_remove) {
+            // Usuń z listy
+            for (int j = i; j < window_count - 1; j++) {
+                windows[j] = windows[j + 1];
+            }
+            window_count--;
+            // Zwolnij pamięć
+            Syscall::FreeWindowMemory(win);
+            // nie inkrementuj i - ten slot zajął następny
+        } else {
+            i++;
+        }
+    }
+
     bool mouse_clicked = (mouse_left && !prev_mouse_left);
     prev_mouse_left = mouse_left;
 
@@ -447,14 +534,24 @@ void Compositor::Render() {
         tb_x += w_btn_w + 2;
     }
     
-    // Zegarek
-    int clock_w = 54;
-    int clock_x = screen_w - clock_w - 2;
-    Framebuffer::DrawRect(clock_x, btn_y, clock_w, btn_h, 0xC0C0C0);
-    Framebuffer::DrawRect(clock_x, btn_y, clock_w, 1, 0x808080); // inner shadow top
-    Framebuffer::DrawRect(clock_x, btn_y, 1, btn_h, 0x808080); // inner shadow left
-    Framebuffer::DrawRect(clock_x + clock_w - 1, btn_y, 1, btn_h, 0xFFFFFF); // highlight right
-    Framebuffer::DrawRect(clock_x, btn_y + btn_h - 1, clock_w, 1, 0xFFFFFF); // highlight bottom
+    // System Tray (Zegarek + Ikony)
+    int tray_w = 54;
+    if (icon_speaker) tray_w += 20; // miejsce na ikonę głośnika
+    
+    int tray_x = screen_w - tray_w - 2;
+    Framebuffer::DrawRect(tray_x, btn_y, tray_w, btn_h, 0xC0C0C0);
+    Framebuffer::DrawRect(tray_x, btn_y, tray_w, 1, 0x808080); // inner shadow top
+    Framebuffer::DrawRect(tray_x, btn_y, 1, btn_h, 0x808080); // inner shadow left
+    Framebuffer::DrawRect(tray_x + tray_w - 1, btn_y, 1, btn_h, 0xFFFFFF); // highlight right
+    Framebuffer::DrawRect(tray_x, btn_y + btn_h - 1, tray_w, 1, 0xFFFFFF); // highlight bottom
+    
+    int tray_item_x = tray_x + 6;
+    
+    if (icon_speaker) {
+        // Draw 16x16 speaker icon centered vertically
+        BMP::Draw(icon_speaker, tray_item_x, btn_y + (btn_h - 16) / 2);
+        tray_item_x += 20;
+    }
     
     uint8_t h = RTC::GetHour();
     uint8_t m = RTC::GetMinute();
@@ -462,15 +559,12 @@ void Compositor::Render() {
         (char)('0' + (h >> 4)), (char)('0' + (h & 0x0F)), ':',
         (char)('0' + (m >> 4)), (char)('0' + (m & 0x0F)), '\0'
     };
-    Framebuffer::DrawString(time_str, clock_x + 8, btn_y + (btn_h - 8) / 2, 0x000000, 0xC0C0C0);
+    Framebuffer::DrawString(time_str, tray_item_x, btn_y + (btn_h - 8) / 2, 0x000000, 0xC0C0C0);
     
     // 4. Draw Start Menu
-    static bool programs_hovered_persistent = false;
-    static uint32_t hover_frames = 0;
-    
     if (start_menu_open) {
-        int menu_w = 180;
-        int menu_h = 240;
+        int menu_w = 220;
+        int menu_h = 210;
         int menu_y = screen_h - taskbar_h - menu_h;
         
         Framebuffer::DrawRect(0, menu_y, menu_w, menu_h, 0xC0C0C0);
@@ -498,14 +592,26 @@ void Compositor::Render() {
             "O Systemie"
         };
         
-        int item_y = menu_y + 4;
+        int item_heights[] = { 36, 36, 36, 36, 12, 36 };
+        void* item_icons[] = {
+            icon_programy,
+            nullptr, // Kalkulator
+            icon_folder_32, // Ustawienia
+            icon_clock,
+            nullptr,
+            icon_bmp // O systemie moze miec mala ikone 16x16, centrowana
+        };
+        
+        int current_y = menu_y + 4;
         bool any_program_hovered = false;
         
         for (int i = 0; i < 6; i++) {
             int bx = 36;
-            int by = item_y + i * 24;
+            int by = current_y;
             int bw = menu_w - 40;
-            int bh = 24;
+            int bh = item_heights[i];
+            
+            current_y += bh;
             
             // Obsługa separatora
             if (menu_items[i][0] == '-') {
@@ -524,9 +630,17 @@ void Compositor::Render() {
             
             Framebuffer::DrawRect(bx, by, bw, bh, item_bg);
             
-            // Miejsce na ikonę (np. bx + 4) będzie tutaj ładowane z VFS w przyszłości.
+            // Draw Icon
+            if (item_icons[i]) {
+                if (item_icons[i] == icon_bmp) {
+                    BMP::Draw(item_icons[i], bx + 12, by + 10); // 16x16 icon centered in 32x32 space
+                } else {
+                    BMP::Draw(item_icons[i], bx + 4, by + 2); // 32x32 icon
+                }
+            }
+            
             // Tekst:
-            Framebuffer::DrawString(menu_items[i], bx + 28, by + (bh - 8) / 2, item_fg, item_bg);
+            Framebuffer::DrawString(menu_items[i], bx + 42, by + (bh - 8) / 2, item_fg, item_bg);
             
             if (is_hover && mouse_clicked) {
                 extern void ExecAppTask(void*);
@@ -557,7 +671,7 @@ void Compositor::Render() {
         int sub_w = 150;
         int sub_h = 104;
         int sub_x = menu_w - 2;
-        int sub_y = item_y; // na wysokosci "Programy >"
+        int sub_y = menu_y + 4; // na wysokosci "Programy >"
         
         bool in_sub = false;
         if (programs_hovered_persistent) {
@@ -622,13 +736,62 @@ void Compositor::Render() {
     if (mouse_y < 0) mouse_y = 0;
     if (mouse_x >= (int)screen_w) mouse_x = screen_w - 1;
     if (mouse_y >= (int)screen_h) mouse_y = screen_h - 1;
-    
-    // simple crosshair
-    Framebuffer::DrawRect(mouse_x - 1, mouse_y - 5, 3, 11, 0x000000);
-    Framebuffer::DrawRect(mouse_x - 5, mouse_y - 1, 11, 3, 0x000000);
-    Framebuffer::DrawRect(mouse_x, mouse_y - 4, 1, 9, 0xFFFFFF);
-    Framebuffer::DrawRect(mouse_x - 4, mouse_y, 9, 1, 0xFFFFFF);
+
+    if (cursor_bmp) {
+        // Rysuj kursor BMP z przezroczystocią (czarny = przezroczysty)
+        BMPHeader* hdr = (BMPHeader*)cursor_bmp;
+        BMPInfoHeader* info = (BMPInfoHeader*)((uint8_t*)cursor_bmp + sizeof(BMPHeader));
+        uint8_t* pixels = (uint8_t*)cursor_bmp + hdr->data_offset;
+        int cw = info->width;
+        int ch = (info->height < 0) ? -info->height : info->height;
+        bool flipped = (info->height > 0);
+        int bpp = info->bit_count / 8;
+        int stride = (cw * bpp + 3) & ~3;
+        for (int row = 0; row < ch; row++) {
+            int src_row = flipped ? (ch - 1 - row) : row;
+            uint8_t* rdata = pixels + src_row * stride;
+            for (int col = 0; col < cw; col++) {
+                uint8_t b = rdata[col * bpp];
+                uint8_t g = rdata[col * bpp + 1];
+                uint8_t r = rdata[col * bpp + 2];
+                uint8_t a = (bpp == 4) ? rdata[col * bpp + 3] : 255;
+                
+                // Fallback dla 24-bit BMP: czarny to przezroczysty
+                if (bpp == 3 && r == 0 && g == 0 && b == 0) a = 0;
+                
+                if (a == 0) continue;
+
+                int px = mouse_x + col;
+                int py = mouse_y + row;
+                
+                if (px >= 0 && px < (int)screen_w && py >= 0 && py < (int)screen_h) {
+                    if (a == 255) {
+                        Framebuffer::PutPixel(px, py, (r << 16) | (g << 8) | b);
+                    } else {
+                        // Alpha blending
+                        uint32_t bg = Framebuffer::GetPixel(px, py);
+                        uint8_t bg_r = (bg >> 16) & 0xFF;
+                        uint8_t bg_g = (bg >> 8) & 0xFF;
+                        uint8_t bg_b = bg & 0xFF;
+                        
+                        uint8_t final_r = (r * a + bg_r * (255 - a)) / 255;
+                        uint8_t final_g = (g * a + bg_g * (255 - a)) / 255;
+                        uint8_t final_b = (b * a + bg_b * (255 - a)) / 255;
+                        
+                        Framebuffer::PutPixel(px, py, (final_r << 16) | (final_g << 8) | final_b);
+                    }
+                }
+            }
+        }
+    } else {
+        // Fallback: krzyżyk
+        Framebuffer::DrawRect(mouse_x - 1, mouse_y - 5, 3, 11, 0x000000);
+        Framebuffer::DrawRect(mouse_x - 5, mouse_y - 1, 11, 3, 0x000000);
+        Framebuffer::DrawRect(mouse_x, mouse_y - 4, 1, 9, 0xFFFFFF);
+        Framebuffer::DrawRect(mouse_x - 4, mouse_y, 9, 1, 0xFFFFFF);
+    }
     
     // 6. Swap
     Framebuffer::SwapBuffers();
+    is_rendering = false;
 }

@@ -21,6 +21,7 @@ public:
     class Application* app = nullptr;
     
     bool active = false;
+    bool pending_remove = false; // Ustawiane przez sys_exit; Compositor sprząta na początku klatki
     
     // Wsparcie dla Userspace GUI
     uint32_t* fb_buffer = nullptr;
