@@ -74,6 +74,17 @@ bool mouse_middle = false;
 
 static uint8_t mouse_cycle = 0;
 static int8_t mouse_byte[3];
+static uint32_t mouse_speed_percent = 100; // dziala tylko w trybie relatywnym (VMMouse jest absolutny)
+
+void Mouse::SetSpeed(uint32_t percent) {
+    if (percent < 25) percent = 25;
+    if (percent > 300) percent = 300;
+    mouse_speed_percent = percent;
+}
+
+uint32_t Mouse::GetSpeed() {
+    return mouse_speed_percent;
+}
 
 void Mouse::Init() {
     uint8_t status;
@@ -184,7 +195,10 @@ void Mouse::HandleInterrupt() {
             
             int dx = mouse_byte[1] - ((mouse_byte[0] << 4) & 0x100);
             int dy = mouse_byte[2] - ((mouse_byte[0] << 3) & 0x100);
-            
+
+            dx = (dx * (int)mouse_speed_percent) / 100;
+            dy = (dy * (int)mouse_speed_percent) / 100;
+
             mouse_x += dx;
             mouse_y -= dy;
             

@@ -81,6 +81,20 @@ int sys_get_volume(uint32_t* percent) {
     return (int)ret;
 }
 
+int sys_set_mouse_speed(uint32_t percent) {
+    long syscall_num = 11;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"((long)percent));
+    return (int)ret;
+}
+
+int sys_get_mouse_speed(uint32_t* percent) {
+    long syscall_num = 12;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(percent));
+    return (int)ret;
+}
+
 void sys_reload_wallpaper() {
     long syscall_num = 53;
     long ret;

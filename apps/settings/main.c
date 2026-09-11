@@ -52,7 +52,7 @@ static void draw_win_button(uint32_t* fb, int win_w, int x, int y, int w, int h,
     gui_draw_string(fb, win_w, text, text_x, text_y, 0x000000, 0xC0C0C0);
 }
 
-// Kolejnosc zakladek: 0 = Wyglad, 1 = Wyswietlacz, 2 = System, 3 = Dzwiek
+// Kolejnosc zakladek: 0 = Wyglad, 1 = Wyswietlacz, 2 = System, 3 = Dzwiek, 4 = Mysz
 void draw_sidebar(uint32_t* fb, int win_w, int win_h, int state) {
     // Tło sidebaru
     gui_draw_rect(fb, win_w, 0, 0, 140, win_h, 0x2C3E50); // ciemnoniebieski
@@ -76,6 +76,11 @@ void draw_sidebar(uint32_t* fb, int win_w, int win_h, int state) {
     uint32_t color_dzwiek = (state == 3) ? 0x34495E : 0x2C3E50;
     gui_draw_rect(fb, win_w, 0, 160, 140, 40, color_dzwiek);
     gui_draw_string(fb, win_w, "Dzwiek", 20, 176, 0xFFFFFF, color_dzwiek);
+
+    // Kategoria: Mysz
+    uint32_t color_mysz = (state == 4) ? 0x34495E : 0x2C3E50;
+    gui_draw_rect(fb, win_w, 0, 200, 140, 40, color_mysz);
+    gui_draw_string(fb, win_w, "Mysz", 20, 216, 0xFFFFFF, color_mysz);
 }
 
 void draw_home(uint32_t* fb, int win_w, int win_h, int win_id) {
@@ -178,6 +183,25 @@ void draw_sound(uint32_t* fb, int win_w, int win_h, int win_id, uint32_t volume)
     sys_update_window(win_id);
 }
 
+void draw_mouse(uint32_t* fb, int win_w, int win_h, int win_id, uint32_t speed) {
+    gui_draw_rect(fb, win_w, 140, 0, win_w - 140, win_h, 0xECF0F1);
+    gui_draw_string(fb, win_w, "Ustawienia - Mysz", 160, 20, 0x2C3E50, 0xECF0F1);
+
+    char line[32];
+    char num[16];
+    strcpy_(line, "Czulosc: ");
+    itoa(speed, num); strcat_(line, num);
+    strcat_(line, "%");
+    gui_draw_string(fb, win_w, line, 160, 60, 0x000000, 0xECF0F1);
+    gui_draw_string(fb, win_w, "(dziala na PS/2 w trybie relatywnym)", 160, 165, 0x000000, 0xECF0F1);
+
+    draw_win_button(fb, win_w, 160, 85, 40, 30, "-");
+    draw_win_button(fb, win_w, 210, 85, 40, 30, "+");
+
+    draw_sidebar(fb, win_w, win_h, 4);
+    sys_update_window(win_id);
+}
+
 void _start() {
     uint32_t* fb = 0;
     int win_w = 540;
@@ -189,9 +213,11 @@ void _start() {
         sys_exit();
     }
 
-    int state = 0; // 0 = Wyglad, 1 = Wyswietlacz, 2 = System, 3 = Dzwiek
+    int state = 0; // 0 = Wyglad, 1 = Wyswietlacz, 2 = System, 3 = Dzwiek, 4 = Mysz
     uint32_t volume = 80;
     sys_get_volume(&volume);
+    uint32_t mouse_speed = 100;
+    sys_get_mouse_speed(&mouse_speed);
 
     draw_home(fb, win_w, win_h, win_id);
 
@@ -213,6 +239,9 @@ void _start() {
                     } else if (ev.y >= 160 && ev.y < 200 && state != 3) {
                         state = 3;
                         draw_sound(fb, win_w, win_h, win_id, volume);
+                    } else if (ev.y >= 200 && ev.y < 240 && state != 4) {
+                        state = 4;
+                        draw_mouse(fb, win_w, win_h, win_id, mouse_speed);
                     }
                 }
                 
@@ -245,6 +274,18 @@ void _start() {
                         }
                     } else if (ev.y >= 135 && ev.y <= 165 && ev.x >= 160 && ev.x <= 320) { // Testuj dzwiek
                         sys_play_wav("/notify.wav");
+                    }
+                } else if (state == 4) {
+                    if (ev.y >= 85 && ev.y <= 115) {
+                        if (ev.x >= 160 && ev.x <= 200 && mouse_speed >= 50) { // "-"
+                            mouse_speed -= 25;
+                            sys_set_mouse_speed(mouse_speed);
+                            draw_mouse(fb, win_w, win_h, win_id, mouse_speed);
+                        } else if (ev.x >= 210 && ev.x <= 250 && mouse_speed <= 275) { // "+"
+                            mouse_speed += 25;
+                            sys_set_mouse_speed(mouse_speed);
+                            draw_mouse(fb, win_w, win_h, win_id, mouse_speed);
+                        }
                     }
                 }
             } else if (ev.type == 3) { // Close

@@ -38,6 +38,8 @@ int sys_get_display_info(uint32_t* width, uint32_t* height, uint32_t* bpp);
 int sys_play_wav(const char* path);
 int sys_set_volume(uint32_t percent);
 int sys_get_volume(uint32_t* percent);
+int sys_set_mouse_speed(uint32_t percent);
+int sys_get_mouse_speed(uint32_t* percent);
 void sys_reload_wallpaper();
 
 void gui_draw_rect(uint32_t* fb, int win_w, int x, int y, int w, int h, uint32_t color);

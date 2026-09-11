@@ -11,6 +11,7 @@
 #include "../gui/bmp.h"
 #include "../gui/fb.h"
 #include "../drivers/ac97.h"
+#include "../drivers/ps2_mouse.h"
 #include "critical.h"
 
 static Window sys_windows[32] = {
@@ -126,6 +127,14 @@ void Syscall::Handler(Registers* regs) {
         uint16_t reg_val = AC97::ReadCodec(0x18);
         uint8_t atten = reg_val & 0x3F;
         if (out_percent) *out_percent = 100 - (atten * 100 / 63);
+        regs->rax = 1;
+    } else if (syscall_num == 11) { // sys_set_mouse_speed (25-300%)
+        uint32_t percent = (uint32_t)regs->rdi;
+        Mouse::SetSpeed(percent);
+        regs->rax = 1;
+    } else if (syscall_num == 12) { // sys_get_mouse_speed
+        uint32_t* out_percent = (uint32_t*)regs->rdi;
+        if (out_percent) *out_percent = Mouse::GetSpeed();
         regs->rax = 1;
     } else if (syscall_num == 50) { // sys_create_window
         // rdi: title (const char*), rsi: width, rdx: height, r10: x, r8: y, r9: CreateWindowResult* pointer
