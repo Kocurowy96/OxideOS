@@ -1,5 +1,0 @@
-- [x] Refaktoryzacja `apps/settings/main.c` (Nowy, kafelkowy design Home).
-- [x] Refaktoryzacja `apps/settings/main.c` (Zakładka Tapet - układ siatki pod miniaturki).
-- [x] Dodanie rysowania miniatur (`sys_draw_bmp_file`) w Panelu Sterowania zamiast brzydkich przycisków tekstowych.
-- [x] Przebudowa logiki klikania (obszary miniatur zamiast starych przycisków).
-- [x] Zwiększenie rozmiaru okna Panelu Sterowania z 320x240 na coś bardziej proporcjonalnego, np. 500x360.

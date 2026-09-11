@@ -25,6 +25,7 @@ Panel: https://claude.ai/code/routines/trig_01WyfN223HwBRWFr65d18VKx
 
 - [ ] Ustawienia: zakładka **Mysz** (kolejność z 2026-09-11: Wyświetlacz → System → Dźwięk → **Mysz**)
 - [ ] Sprzątnąć write-only ikony w `compositor.cpp` (`icon_programy`, `icon_clock`, `icon_folder_32` — ładowane, ale nigdzie już nie rysowane po przejściu na dynamiczne Menu Start)
+- [ ] Rozbić `scripts/run.sh` na osobne skrypty (ustalone 2026-09-11, planowane na najbliższą wspólną sesję): `scripts/build.sh` (sam kernel+apki), `scripts/make_disk.sh` (dysk.img+ISO z już zbudowanych binarek), `scripts/test_headless.sh` (build+dysk+boot w QEMU bez GUI, log do pliku, jasny PASS/FAIL), `scripts/run.sh` zostaje jako punkt wejścia z GUI wołający powyższe zamiast duplikować logikę
 
 ## Do przegadania
 
@@ -34,6 +35,7 @@ Panel: https://claude.ai/code/routines/trig_01WyfN223HwBRWFr65d18VKx
 - [ ] Skompilować i odpalić SerenityOS lokalnie (mamy klon w `.serenity/`) — rekonesans, jak wygląda dojrzały hobby-OS i jak Ladybird tam faktycznie działa
 - [ ] Sieć / TCP-IP stack — zero na razie w OxideOS; wymagane zanim jakikolwiek browser (nawet coś dużo mniejszego niż Ladybird) miałby sens
 - [ ] Realny model procesów z osobnymi tabelami stron per proces (dziś: jedna wspólna przestrzeń adresowa dla wszystkich tasków — zdiagnozowane 2026-09-11 przy okazji buga ze zniszczonymi oknami; per-task kernel stack już naprawiony, ale to kolejny krok w tym samym kierunku)
+- [ ] "Port debugowy" do testów — wrappery skryptowe na już istniejące możliwości QEMU (ustalone 2026-09-11, nie trzeba budować własnego protokołu): (1) zrzuty ekranu przez QMP `screendump`, (2) inspekcja RAM-u/rejestrów/aktualnie wykonywanej instrukcji przez GDB stub QEMU (`-s -S`), (3) symulacja myszy/klawiatury na "niewidocznym" ekranie przez QMP `input-send-event` do testów UI bez człowieka, (4) nagrywanie ekranu — TYLKO lokalnie na maszynie roboczej (Garuda Linux/KWin/Wayland, ASUS TUF Gaming A15), nie w chmurze. Robić etapami: (1) najpierw, (4) na końcu/opcjonalnie.
 
 ## Zrobione
 
