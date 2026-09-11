@@ -10,7 +10,7 @@ void _start() {
         sys_print("Failed to create Welcome window\n");
         sys_exit();
     }
-    
+
     gui_draw_rect(fb, win_w, 0, 0, win_w, win_h, 0xC0C0C0);
     
     gui_draw_string(fb, win_w, "Witaj w OxideOS!", 140, 20, 0x000080, 0xC0C0C0);

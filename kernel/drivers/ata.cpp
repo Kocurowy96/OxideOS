@@ -1,6 +1,7 @@
 #include "ata.h"
 #include "../cpu/io.h"
 #include "../serial.h"
+#include "../cpu/critical.h"
 
 #define ATA_PRIMARY_DATA         0x1F0
 #define ATA_PRIMARY_ERR          0x1F1
@@ -37,7 +38,7 @@ bool ATA::ReadSector(uint32_t lba, uint8_t* buffer) {
 }
 
 bool ATA::ReadSectors(uint32_t lba, uint8_t count, uint8_t* buffer) {
-    asm volatile("cli");
+    EnterCritical();
     outb(ATA_PRIMARY_DRIVE_HEAD, 0xE0 | ((lba >> 24) & 0x0F));
     outb(ATA_PRIMARY_ERR, 0x00);
     outb(ATA_PRIMARY_SECCOUNT, count);
@@ -58,20 +59,20 @@ bool ATA::ReadSectors(uint32_t lba, uint8_t count, uint8_t* buffer) {
         
         if (status & 0x01) { // ERR set
             SerialPort::WriteString("ATA: Read Error!\n");
-            asm volatile("sti");
+            ExitCritical();
             return false;
         }
-        
+
         while (!(status & 0x08)) { // DRQ clear
             status = inb(ATA_PRIMARY_COMM_STAT);
         }
-        
+
         // Read 256 words (512 bytes)
         insw(ATA_PRIMARY_DATA, ptr, 256);
         ptr += 256;
     }
-    
-    asm volatile("sti");
+
+    ExitCritical();
     return true;
 }
 
@@ -80,7 +81,7 @@ bool ATA::WriteSector(uint32_t lba, const uint8_t* buffer) {
 }
 
 bool ATA::WriteSectors(uint32_t lba, uint8_t count, const uint8_t* buffer) {
-    asm volatile("cli");
+    EnterCritical();
     outb(ATA_PRIMARY_DRIVE_HEAD, 0xE0 | ((lba >> 24) & 0x0F));
     outb(ATA_PRIMARY_ERR, 0x00);
     outb(ATA_PRIMARY_SECCOUNT, count);
@@ -101,7 +102,7 @@ bool ATA::WriteSectors(uint32_t lba, uint8_t count, const uint8_t* buffer) {
         
         if (status & 0x01) { // ERR set
             SerialPort::WriteString("ATA: Write Error!\n");
-            asm volatile("sti");
+            ExitCritical();
             return false;
         }
         
@@ -120,7 +121,7 @@ bool ATA::WriteSectors(uint32_t lba, uint8_t count, const uint8_t* buffer) {
     while (status & 0x80) { // BSY set
         status = inb(ATA_PRIMARY_COMM_STAT);
     }
-    
-    asm volatile("sti");
+
+    ExitCritical();
     return true;
 }

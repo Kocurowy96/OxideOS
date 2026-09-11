@@ -222,7 +222,7 @@ extern "C" void _start(void) {
     
     // Start the User App (HELLO.ELF) via Scheduler
     Scheduler::CreateTask((void (*)(void*))ExecAppTask, (void*)"/usr/bin/HELLO.ELF");
-    
+
     // Start desktop rendering task
     Scheduler::CreateTask((void (*)(void*))DesktopTask, nullptr);
     

@@ -28,6 +28,7 @@ void Framebuffer::Init() {
 
 uint32_t Framebuffer::GetWidth() { return fb ? fb->width : 0; }
 uint32_t Framebuffer::GetHeight() { return fb ? fb->height : 0; }
+uint16_t Framebuffer::GetBpp() { return fb ? fb->bpp : 0; }
 
 void Framebuffer::PutPixel(int32_t x, int32_t y, uint32_t color) {
     if (!fb || x < 0 || y < 0 || (uint32_t)x >= fb->width || (uint32_t)y >= fb->height) return;

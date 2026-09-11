@@ -53,6 +53,34 @@ int sys_get_mem_info(uint64_t* total, uint64_t* free) {
     return (int)ret;
 }
 
+int sys_get_display_info(uint32_t* width, uint32_t* height, uint32_t* bpp) {
+    long syscall_num = 7;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(width), "S"(height), "d"(bpp));
+    return (int)ret;
+}
+
+int sys_play_wav(const char* path) {
+    long syscall_num = 8;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(path));
+    return (int)ret;
+}
+
+int sys_set_volume(uint32_t percent) {
+    long syscall_num = 9;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"((long)percent));
+    return (int)ret;
+}
+
+int sys_get_volume(uint32_t* percent) {
+    long syscall_num = 10;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(percent));
+    return (int)ret;
+}
+
 void sys_reload_wallpaper() {
     long syscall_num = 53;
     long ret;

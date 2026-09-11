@@ -1,6 +1,7 @@
 #include "pmm.h"
 #include "../limine.h"
 #include "../serial.h"
+#include "../cpu/critical.h"
 
 // Define limine requests for memory map and hhdm (Higher Half Direct Map)
 __attribute__((used, section(".requests")))
@@ -134,6 +135,10 @@ void* PMM::AllocatePage() {
 void* PMM::AllocatePages(size_t count) {
     if (count == 0) return nullptr;
 
+    // Skanowanie+oznaczanie bitmapy musi byc atomowe wzgledem innych taskow
+    // (inaczej dwa taski moga dostac te sama "wolna" strone - patrz critical.h)
+    EnterCritical();
+
     size_t free_count = 0;
     size_t start_index = 0;
 
@@ -145,6 +150,7 @@ void* PMM::AllocatePages(size_t count) {
                 last_free_index = i + 1;
                 void* ptr = (void*)(start_index * PAGE_SIZE);
                 SetUsed(ptr, count);
+                ExitCritical();
                 return ptr;
             }
         } else {
@@ -162,6 +168,7 @@ void* PMM::AllocatePages(size_t count) {
                 last_free_index = i + 1;
                 void* ptr = (void*)(start_index * PAGE_SIZE);
                 SetUsed(ptr, count);
+                ExitCritical();
                 return ptr;
             }
         } else {
@@ -169,6 +176,7 @@ void* PMM::AllocatePages(size_t count) {
         }
     }
 
+    ExitCritical();
     SerialPort::WriteString("PMM: Out of memory!\n");
     return nullptr;
 }
@@ -178,9 +186,11 @@ void PMM::FreePage(void* ptr) {
 }
 
 void PMM::FreePages(void* ptr, size_t count) {
+    EnterCritical();
     SetFree(ptr, count);
     size_t index = (uint64_t)ptr / PAGE_SIZE;
     if (index < last_free_index) {
         last_free_index = index;
     }
+    ExitCritical();
 }

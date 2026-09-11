@@ -3,6 +3,7 @@
 #include "../mem/vmm.h"
 #include "../serial.h"
 #include "../limine.h"
+#include "../cpu/gdt.h"
 
 extern volatile struct limine_hhdm_request hhdm_request;
 
@@ -42,7 +43,17 @@ void Scheduler::CreateTask(void (*entry)(void*), void* arg) {
     if (hhdm_request.response != nullptr) {
         stack_top += hhdm_request.response->offset;
     }
-    
+
+    // Wlasny stos jadra (2 strony = 8192 bajty) na przejscia Ring3->Ring0 (TSS.rsp0).
+    // Bez tego wszystkie taski dzielilyby jeden globalny stos przerwan, co przy
+    // dwoch dzialajacych rownolegle aplikacjach Ring3 mieszalo im stan.
+    void* kstack = PMM::AllocatePages(2);
+    uint64_t kstack_top = (uint64_t)kstack + 8192;
+    if (hhdm_request.response != nullptr) {
+        kstack_top += hhdm_request.response->offset;
+    }
+    t->kernel_stack_top = kstack_top;
+
     // Zero out registers
     for(size_t i = 0; i < sizeof(Registers); i++) {
         ((uint8_t*)&t->regs)[i] = 0;
@@ -81,7 +92,12 @@ Registers* Scheduler::Schedule(Registers* regs) {
     do {
         current_task = (current_task + 1) % MAX_TASKS;
     } while (!tasks[current_task].active);
-    
+
+    // Kazdy task ma wlasny stos jadra - przelaczamy TSS.rsp0 na jego stos, zeby
+    // ewentualne przejscie Ring3->Ring0 tego konkretnego taska nie ladowalo na
+    // stosie ktoregos innego (patrz komentarz w CreateTask).
+    GDT::SetTSSStack((void*)tasks[current_task].kernel_stack_top);
+
     return &tasks[current_task].regs;
 }
 

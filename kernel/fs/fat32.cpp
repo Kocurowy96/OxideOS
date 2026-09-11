@@ -3,6 +3,7 @@
 #include "../serial.h"
 #include "../mem/pmm.h"
 #include "../limine.h"
+#include "../cpu/critical.h"
 
 extern volatile struct limine_hhdm_request hhdm_request;
 
@@ -117,20 +118,32 @@ static uint32_t GetClusterLBA(uint32_t cluster) {
     return data_start_lba + (cluster - 2) * sectors_per_cluster;
 }
 
+// Cache ostatnio odczytanego sektora FAT. SetFATEntry() pisze na dysk bezposrednio,
+// wiec musi umiec uniewaznic ten cache, zeby GetNextCluster() nie zwracal nieaktualnych
+// danych po zapisie (inaczej odczyt lancucha klastrow moze trafic na "widmowe" wpisy
+// sprzed zapisu i np. zapetlic sie w nieskonczonosc).
+static uint32_t cached_fat_sector = 0xFFFFFFFF;
+static uint8_t cached_fat_data[512];
+
 static uint32_t GetNextCluster(uint32_t current_cluster) {
     uint32_t fat_offset = current_cluster * 4;
     uint32_t fat_sector = fat_start_lba + (fat_offset / 512);
     uint32_t ent_offset = fat_offset % 512;
-    
-    static uint32_t cached_fat_sector = 0xFFFFFFFF;
-    static uint8_t cached_fat_data[512];
-    
+
+    // Cala sekwencja "sprawdz cache -> ewentualnie doczytaj -> odczytaj wpis" musi
+    // byc atomowa, inaczej inny task moze podmienic cached_fat_data w trakcie.
+    EnterCritical();
+
     if (cached_fat_sector != fat_sector) {
-        if (!ATA::ReadSector(fat_sector, cached_fat_data)) return 0x0FFFFFFF;
+        if (!ATA::ReadSector(fat_sector, cached_fat_data)) {
+            ExitCritical();
+            return 0x0FFFFFFF;
+        }
         cached_fat_sector = fat_sector;
     }
-    
+
     uint32_t next = *(uint32_t*)&cached_fat_data[ent_offset];
+    ExitCritical();
     return next & 0x0FFFFFFF;
 }
 
@@ -243,6 +256,83 @@ static uint32_t FindDirectoryCluster(const char* path, char* filename) {
     return current_cluster;
 }
 
+// Nawiguje przez wszystkie człony ścieżki (w przeciwieństwie do FindDirectoryCluster,
+// który zatrzymuje się przed ostatnim) i zwraca klaster katalogu docelowego.
+static uint32_t ResolveDirectoryCluster(const char* path) {
+    if (path[0] == '\0') return root_cluster;
+
+    uint32_t current_cluster = root_cluster;
+    int path_idx = 0;
+
+    while (path[path_idx] != '\0') {
+        char token[128];
+        int token_idx = 0;
+        while (path[path_idx] != '\0' && path[path_idx] != '/') {
+            token[token_idx++] = path[path_idx++];
+        }
+        token[token_idx] = '\0';
+        if (path[path_idx] == '/') path_idx++;
+
+        if (token_idx == 0) continue; // np. podwójny '/' lub końcowy '/'
+
+        uint32_t next_cluster = 0;
+        uint32_t iter_cluster = current_cluster;
+        uint8_t sector[512];
+
+        while (iter_cluster < 0x0FFFFFF8) {
+            uint32_t lba = GetClusterLBA(iter_cluster);
+            for (int i = 0; i < sectors_per_cluster; i++) {
+                if (!ATA::ReadSector(lba + i, sector)) return 0;
+                lfn_reset();
+                for (int entry = 0; entry < 512; entry += 32) {
+                    if (sector[entry] == 0x00) break;
+                    if (sector[entry] == 0xE5) { lfn_reset(); continue; }
+                    if (sector[entry + 11] == 0x0F) { lfn_add_entry(&sector[entry]); continue; }
+                    if (!(sector[entry + 11] & 0x10)) { lfn_reset(); continue; }
+
+                    if (lfn_matches(token) || str_eq_83((const char*)&sector[entry], token)) {
+                        next_cluster = ((uint32_t)*(uint16_t*)&sector[entry + 20] << 16) | *(uint16_t*)&sector[entry + 26];
+                        break;
+                    }
+                    lfn_reset();
+                }
+                if (next_cluster) break;
+
+                bool has_zero = false;
+                for (int entry = 0; entry < 512; entry += 32) {
+                    if (sector[entry] == 0x00) { has_zero = true; break; }
+                }
+                if (has_zero) break;
+                lfn_reset();
+            }
+            if (next_cluster) break;
+            iter_cluster = GetNextCluster(iter_cluster);
+        }
+
+        if (!next_cluster) return 0;
+        current_cluster = next_cluster;
+    }
+
+    return current_cluster;
+}
+
+// Odtwarza czytelną nazwę "NAZWA.EXT" z 11-bajtowego wpisu 8.3
+static void format_sfn_display(const uint8_t* entry, char* out) {
+    int oi = 0;
+    for (int i = 0; i < 8; i++) {
+        if (entry[i] == ' ') break;
+        out[oi++] = entry[i];
+    }
+    if (entry[8] != ' ') {
+        out[oi++] = '.';
+        for (int i = 8; i < 11; i++) {
+            if (entry[i] == ' ') break;
+            out[oi++] = entry[i];
+        }
+    }
+    out[oi] = '\0';
+}
+
 static uint32_t FindFreeCluster() {
     uint8_t sector[512];
     for(uint32_t fat_sec = 0; fat_sec < sectors_per_fat; fat_sec++) {
@@ -262,7 +352,8 @@ static void SetFATEntry(uint32_t cluster, uint32_t val) {
     uint32_t fat_offset = cluster * 4;
     uint32_t fat_sector = fat_start_lba + (fat_offset / 512);
     uint32_t ent_offset = fat_offset % 512;
-    
+
+    EnterCritical();
     uint8_t sector[512];
     if (ATA::ReadSector(fat_sector, sector)) {
         *(uint32_t*)&sector[ent_offset] = val;
@@ -270,7 +361,13 @@ static void SetFATEntry(uint32_t cluster, uint32_t val) {
         if (num_fats > 1) {
             ATA::WriteSector(fat_sector + sectors_per_fat, sector);
         }
+
+        // Trzymaj cache GetNextCluster() w zgodzie z tym, co wlasnie zapisalismy na dysk
+        if (cached_fat_sector == fat_sector) {
+            mem_cpy(cached_fat_data, sector, 512);
+        }
     }
+    ExitCritical();
 }
 
 bool FAT32::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size) {
@@ -513,4 +610,52 @@ bool FAT32::WriteFile(const char* path, const uint8_t* buffer, uint32_t size) {
     
     SerialPort::WriteString("FAT32: File written successfully.\n");
     return true;
+}
+
+int FAT32::ListDirectory(const char* path, DirEntry* out_entries, int max_entries) {
+    if (bytes_per_sector != 512) return 0;
+
+    uint32_t dir_cluster = ResolveDirectoryCluster(path);
+    if (!dir_cluster) {
+        SerialPort::WriteString("FAT32: ListDirectory - directory not found.\n");
+        return 0;
+    }
+
+    int count = 0;
+    uint32_t current_cluster = dir_cluster;
+    uint8_t sector[512];
+    bool done = false;
+
+    while (!done && current_cluster < 0x0FFFFFF8 && count < max_entries) {
+        uint32_t lba = GetClusterLBA(current_cluster);
+        for (int i = 0; i < sectors_per_cluster && !done && count < max_entries; i++) {
+            if (!ATA::ReadSector(lba + i, sector)) { done = true; break; }
+            lfn_reset();
+            for (int entry = 0; entry < 512; entry += 32) {
+                if (sector[entry] == 0x00) { done = true; break; }
+                if (sector[entry] == 0xE5) { lfn_reset(); continue; } // usunięty wpis
+                if (sector[entry + 11] == 0x0F) { lfn_add_entry(&sector[entry]); continue; } // wpis LFN
+                if (sector[entry + 11] & 0x08) { lfn_reset(); continue; } // etykieta woluminu
+                if (sector[entry] == '.') { lfn_reset(); continue; } // "." i ".."
+
+                DirEntry* de = &out_entries[count];
+                if (lfn_entries_collected > 0) {
+                    int k = 0;
+                    while (lfn_buf[k] && k < FS_MAX_NAME - 1) { de->name[k] = lfn_buf[k]; k++; }
+                    de->name[k] = '\0';
+                } else {
+                    format_sfn_display(&sector[entry], de->name);
+                }
+                de->attributes = (sector[entry + 11] & 0x10) ? FS_ATTR_DIRECTORY : 0;
+                de->size = *(uint32_t*)&sector[entry + 28];
+                count++;
+                lfn_reset();
+
+                if (count >= max_entries) break;
+            }
+        }
+        if (!done) current_cluster = GetNextCluster(current_cluster);
+    }
+
+    return count;
 }

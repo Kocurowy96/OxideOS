@@ -15,5 +15,6 @@ public:
     
     static uint32_t GetWidth();
     static uint32_t GetHeight();
+    static uint16_t GetBpp();
     static void SwapBuffers();
 };

@@ -7,6 +7,7 @@ struct Task {
     Registers regs;
     bool active;
     char name[32];
+    uint64_t kernel_stack_top; // Wlasny stos jadra (TSS.rsp0) na przejscia Ring3->Ring0
 };
 
 struct TaskInfo {

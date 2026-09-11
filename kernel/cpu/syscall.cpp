@@ -9,6 +9,9 @@
 #include "../fs/vfs.h"
 #include "../drivers/rtc.h"
 #include "../gui/bmp.h"
+#include "../gui/fb.h"
+#include "../drivers/ac97.h"
+#include "critical.h"
 
 static Window sys_windows[32] = {
     Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""), Window(0,0,0,0,""),
@@ -55,7 +58,11 @@ void Syscall::Handler(Registers* regs) {
         // Oznacz okna jako do usunięcia - Compositor zrobi to bezpiecznie między klatkami
         MarkTaskWindowsForRemoval(Scheduler::GetCurrentTaskId());
         Scheduler::KillCurrentTask();
-        asm volatile("sti");
+        // sys_exit nigdy nie wraca do isr_handler (wiec jego ExitCritical() po
+        // Syscall::Handler() by sie nie wykonalo) - musimy sami zbalansowac
+        // EnterCritical() z wejscia do syscalla, inaczej licznik z critical.h
+        // zostaje trwale przesuniety i przerwania koncza sie zablokowane na dobre.
+        ExitCritical();
         while(1) {
             asm volatile("hlt");
         }
@@ -87,6 +94,39 @@ void Syscall::Handler(Registers* regs) {
         if (total) *total = PMM::GetTotalMemory();
         if (free) *free = PMM::GetFreeMemory();
         regs->rax = 1;
+    } else if (syscall_num == 7) { // sys_get_display_info
+        uint32_t* width = (uint32_t*)regs->rdi;
+        uint32_t* height = (uint32_t*)regs->rsi;
+        uint32_t* bpp = (uint32_t*)regs->rdx;
+        if (width) *width = Framebuffer::GetWidth();
+        if (height) *height = Framebuffer::GetHeight();
+        if (bpp) *bpp = Framebuffer::GetBpp();
+        regs->rax = 1;
+    } else if (syscall_num == 8) { // sys_play_wav
+        const char* path = (const char*)regs->rdi;
+        uint8_t* wav_buffer = nullptr;
+        uint32_t wav_size = 0;
+        if (VFS::ReadFile(path, &wav_buffer, &wav_size)) {
+            // Bufor zostaje zywy (nie zwalniamy) - AC97 odtwarza go asynchronicznie przez DMA,
+            // dokladnie tak samo jak dzwiek startowy w DesktopTask.
+            AC97::PlayWAV(wav_buffer);
+            regs->rax = 1;
+        } else {
+            regs->rax = 0;
+        }
+    } else if (syscall_num == 9) { // sys_set_volume (0-100)
+        uint32_t percent = (uint32_t)regs->rdi;
+        if (percent > 100) percent = 100;
+        uint8_t atten = (uint8_t)(63 - (percent * 63 / 100)); // 0 = najglosniej, 63 = najciszej
+        uint16_t reg_val = ((uint16_t)atten << 8) | atten;
+        AC97::WriteCodec(0x18, reg_val); // PCM Out Volume
+        regs->rax = 1;
+    } else if (syscall_num == 10) { // sys_get_volume
+        uint32_t* out_percent = (uint32_t*)regs->rdi;
+        uint16_t reg_val = AC97::ReadCodec(0x18);
+        uint8_t atten = reg_val & 0x3F;
+        if (out_percent) *out_percent = 100 - (atten * 100 / 63);
+        regs->rax = 1;
     } else if (syscall_num == 50) { // sys_create_window
         // rdi: title (const char*), rsi: width, rdx: height, r10: x, r8: y, r9: CreateWindowResult* pointer
         const char* title = (const char*)regs->rdi;
@@ -95,7 +135,11 @@ void Syscall::Handler(Registers* regs) {
         int x = regs->r10;
         int y = regs->r8;
         uint64_t res_ptr = regs->r9;
-        
+
+        // Skan+rezerwacja slotu i cala reszta tworzenia okna musi byc atomowa -
+        // inaczej dwa taski moga trafic w ten sam wolny slot (patrz critical.h)
+        EnterCritical();
+
         int slot = -1;
         for (int i = 0; i < 32; i++) {
             if (!sys_windows[i].active) {
@@ -103,12 +147,13 @@ void Syscall::Handler(Registers* regs) {
                 break;
             }
         }
-        
+
         if (slot == -1) {
             regs->rax = 0; // Error
+            ExitCritical();
             return;
         }
-        
+
         Window* win = &sys_windows[slot];
         int titlebar_h = 20;
         *win = Window(x, y, w + 4, h + titlebar_h + 2, title);
@@ -132,9 +177,9 @@ void Syscall::Handler(Registers* regs) {
         for (size_t i = 0; i < pages; i++) {
             VMM::MapPage((uint64_t)phys + i * 4096, vaddr + i * 4096, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
         }
-        
+
         Compositor::AddWindow(win);
-        
+
         // Return results
         if (res_ptr) {
             int* p_id = (int*)res_ptr;
@@ -143,6 +188,7 @@ void Syscall::Handler(Registers* regs) {
             *p_fb = vaddr;
         }
         regs->rax = win->id;
+        ExitCritical();
     } else if (syscall_num == 51) { // sys_update_window
         // Window is updated in memory, Compositor picks it up automatically on Render()
         // Here we could just force a redraw or do nothing if Render loops continuously.
@@ -152,14 +198,17 @@ void Syscall::Handler(Registers* regs) {
         regs->rax = 1;
     } else if (syscall_num == 54) { // sys_destroy_window
         int win_id = regs->rdi;
+        EnterCritical();
         for (int i = 0; i < 32; i++) {
             if (sys_windows[i].id == win_id && sys_windows[i].active) {
                 Compositor::RemoveWindow(&sys_windows[i]);
                 sys_windows[i].active = false;
                 regs->rax = 1;
+                ExitCritical();
                 return;
             }
         }
+        ExitCritical();
         regs->rax = 0;
     } else if (syscall_num == 52) { // sys_get_event
         // rdi: window_id, rsi: Event* (w userspace)

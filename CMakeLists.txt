@@ -27,6 +27,7 @@ set(KERNEL_SOURCES
     kernel/cpu/interrupts.S
     kernel/cpu/isr.cpp
     kernel/cpu/syscall.cpp
+    kernel/cpu/critical.cpp
     kernel/drivers/pic.cpp
     kernel/drivers/rtc.cpp
     kernel/drivers/pit.cpp

@@ -3,6 +3,7 @@ limine_dir/
 iso_root/
 *.iso
 *.o
+*.a
 *.elf
 *.ELF
 .serenity

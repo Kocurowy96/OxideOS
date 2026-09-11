@@ -26,3 +26,11 @@ bool VFS::WriteFile(const char* path, const uint8_t* buffer, uint32_t size) {
 void VFS::FreeFile(uint8_t* buffer, uint32_t size) {
     FAT32::FreeFile(buffer, size);
 }
+
+int VFS::ListDirectory(const char* path, DirEntry* out_entries, int max_entries) {
+    if (path[0] == '/') {
+        path++;
+    }
+
+    return FAT32::ListDirectory(path, out_entries, max_entries);
+}

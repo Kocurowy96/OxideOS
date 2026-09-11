@@ -7,6 +7,7 @@
 #include "../drivers/ps2_kbd.h"
 #include "../drivers/ps2_mouse.h"
 #include "../proc/sched.h"
+#include "critical.h"
 
 extern "C" Registers* isr_handler(Registers* regs) {
     if (regs->int_no < 32) {
@@ -36,7 +37,17 @@ extern "C" Registers* isr_handler(Registers* regs) {
     uint64_t int_no = regs->int_no;
     
     if (int_no == 0x80) {
+        // Interrupt gates juz wchodza tu z IF=0, ale sterowniki (ATA itd.) wewnatrz
+        // syscalli robia wlasne EnterCritical/ExitCritical, ktore przy zejsciu do 0
+        // wlaczaja przerwania *w trakcie* obslugi syscalla. Jesli w tym oknie trafi
+        // tick timera, Scheduler::Schedule() zapisze jako "punkt wznowienia" taska
+        // stan w SRODKU obslugi syscalla na wspoldzielonym stosie jadra (brak TSS
+        // per-task) zamiast normalnego stanu Ring3 - i to jest to, co psulo okna przy
+        // 2 rownoczesnie dzialajacych aplikacjach. Owijamy caly syscall, zeby zaden
+        // "wewnetrzny" sti nie mogl otworzyc tego okna.
+        EnterCritical();
         Syscall::Handler(regs);
+        ExitCritical();
     }
     
     if (int_no >= 32 && int_no <= 47) {

@@ -98,8 +98,48 @@ static char fps_str[16];
 
 static bool prev_mouse_left = false;
 static bool start_menu_open = false;
-static int hover_frames = 0;
-static bool programs_hovered_persistent = false;
+
+// Menu Start: pozycje wczytywane dynamicznie z /usr/bin (VFS::ListDirectory)
+#define MAX_START_MENU_ITEMS 32
+static DirEntry start_menu_entries[MAX_START_MENU_ITEMS];
+static char start_menu_paths[MAX_START_MENU_ITEMS][160];
+static int start_menu_entry_count = 0;
+
+static bool str_ends_with(const char* str, const char* suffix) {
+    int str_len = 0; while (str[str_len]) str_len++;
+    int suf_len = 0; while (suffix[suf_len]) suf_len++;
+    if (suf_len > str_len) return false;
+    for (int i = 0; i < suf_len; i++) {
+        if (str[str_len - suf_len + i] != suffix[i]) return false;
+    }
+    return true;
+}
+
+// Odświeża listę pozycji Menu Start z zawartości /usr/bin
+static void RefreshStartMenu() {
+    DirEntry raw_entries[MAX_START_MENU_ITEMS];
+    int raw_count = VFS::ListDirectory("/usr/bin", raw_entries, MAX_START_MENU_ITEMS);
+
+    start_menu_entry_count = 0;
+    for (int i = 0; i < raw_count && start_menu_entry_count < MAX_START_MENU_ITEMS; i++) {
+        DirEntry* src = &raw_entries[i];
+        // Na razie pokazujemy tylko uruchamialne pliki .ELF (podkatalogi jako submenu to kolejny krok)
+        if (!(src->attributes & FS_ATTR_DIRECTORY) && !str_ends_with(src->name, ".ELF")) continue;
+
+        DirEntry* dst = &start_menu_entries[start_menu_entry_count];
+        *dst = *src;
+
+        char* path = start_menu_paths[start_menu_entry_count];
+        const char* prefix = "/usr/bin/";
+        int p = 0;
+        while (prefix[p]) { path[p] = prefix[p]; p++; }
+        int n = 0;
+        while (src->name[n] && p < 159) { path[p++] = src->name[n++]; }
+        path[p] = '\0';
+
+        start_menu_entry_count++;
+    }
+}
 
 void itoa(int n, char* buffer) {
     int i = 0;
@@ -473,6 +513,7 @@ void Compositor::Render() {
         if (mouse_x >= 0 && mouse_x <= btn_w && mouse_y >= (int)screen_h - taskbar_h && mouse_y <= (int)screen_h) {
             start_menu_open = !start_menu_open;
             clicked_start_btn = true;
+            if (start_menu_open) RefreshStartMenu();
         }
     }
     
@@ -561,174 +602,76 @@ void Compositor::Render() {
     };
     Framebuffer::DrawString(time_str, tray_item_x, btn_y + (btn_h - 8) / 2, 0x000000, 0xC0C0C0);
     
-    // 4. Draw Start Menu
+    // 4. Draw Start Menu (dynamiczny, pozycje z /usr/bin przez VFS::ListDirectory)
     if (start_menu_open) {
+        int item_h = 24;
         int menu_w = 220;
-        int menu_h = 210;
+        int list_h = start_menu_entry_count * item_h;
+        int menu_h = 8 + list_h;
+        if (menu_h < 100) menu_h = 100; // miejsce na pionowy baner "OxideOS"
         int menu_y = screen_h - taskbar_h - menu_h;
-        
+
         Framebuffer::DrawRect(0, menu_y, menu_w, menu_h, 0xC0C0C0);
         Framebuffer::DrawRect(0, menu_y, menu_w, 2, 0xFFFFFF); // highlight top
         Framebuffer::DrawRect(0, menu_y, 2, menu_h, 0xFFFFFF); // highlight left
         Framebuffer::DrawRect(menu_w - 2, menu_y, 2, menu_h, 0x000000); // shadow right
         Framebuffer::DrawRect(0, menu_y + menu_h - 2, menu_w, 2, 0x000000); // shadow bottom
-        
+
         // Pasek Boczny (Win95 style dark blue)
         Framebuffer::DrawRect(2, menu_y + 2, 32, menu_h - 4, 0x0000A0);
-        
+
         const char* os_name = "OxideOS";
         int banner_y = menu_y + menu_h - 80;
         for (int i = 0; os_name[i]; i++) {
             // Rysowanie znaków pionowo na pasku
             Framebuffer::DrawChar(os_name[i], 14, banner_y + i * 10, 0xFFFFFF, 0x0000A0);
         }
-        
-        const char* menu_items[] = {
-            "Programy >",
-            "Kalkulator",
-            "Ustawienia",
-            "Zegar",
-            "---", // Separator
-            "O Systemie"
-        };
-        
-        int item_heights[] = { 36, 36, 36, 36, 12, 36 };
-        void* item_icons[] = {
-            icon_programy,
-            nullptr, // Kalkulator
-            icon_folder_32, // Ustawienia
-            icon_clock,
-            nullptr,
-            icon_bmp // O systemie moze miec mala ikone 16x16, centrowana
-        };
-        
+
         int current_y = menu_y + 4;
-        bool any_program_hovered = false;
-        
-        for (int i = 0; i < 6; i++) {
+
+        for (int i = 0; i < start_menu_entry_count; i++) {
             int bx = 36;
             int by = current_y;
             int bw = menu_w - 40;
-            int bh = item_heights[i];
-            
+            int bh = item_h;
+
             current_y += bh;
-            
-            // Obsługa separatora
-            if (menu_items[i][0] == '-') {
-                int sep_y = by + (bh / 2);
-                Framebuffer::DrawRect(bx, sep_y, bw, 1, 0x808080); // Ciemniejsza krawędź
-                Framebuffer::DrawRect(bx, sep_y + 1, bw, 1, 0xFFFFFF); // Jasna krawędź
-                continue;
-            }
-            
+
             bool is_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
-            
-            if (i == 0 && is_hover) any_program_hovered = true;
-            
+
             uint32_t item_bg = is_hover ? 0x0000A0 : 0xC0C0C0; // Win95 Hover: Dark Blue
             uint32_t item_fg = is_hover ? 0xFFFFFF : 0x000000; // Win95 Hover Text: White
-            
+
             Framebuffer::DrawRect(bx, by, bw, bh, item_bg);
-            
-            // Draw Icon
-            if (item_icons[i]) {
-                if (item_icons[i] == icon_bmp) {
-                    BMP::Draw(item_icons[i], bx + 12, by + 10); // 16x16 icon centered in 32x32 space
-                } else {
-                    BMP::Draw(item_icons[i], bx + 4, by + 2); // 32x32 icon
-                }
+
+            // Ikona (na razie generyczna - domyslna ikonka okna 16x16)
+            if (icon_bmp) {
+                BMP::Draw(icon_bmp, bx + 4, by + (bh - 16) / 2);
             }
-            
-            // Tekst:
-            Framebuffer::DrawString(menu_items[i], bx + 42, by + (bh - 8) / 2, item_fg, item_bg);
-            
+
+            // Nazwa pozycji: nazwa pliku bez rozszerzenia ".ELF"
+            char display_name[FS_MAX_NAME];
+            int nlen = 0;
+            while (start_menu_entries[i].name[nlen]) nlen++;
+            if (str_ends_with(start_menu_entries[i].name, ".ELF")) nlen -= 4;
+            for (int k = 0; k < nlen && k < FS_MAX_NAME - 1; k++) display_name[k] = start_menu_entries[i].name[k];
+            display_name[nlen < 0 ? 0 : nlen] = '\0';
+
+            Framebuffer::DrawString(display_name, bx + 24, by + (bh - 8) / 2, item_fg, item_bg);
+
             if (is_hover && mouse_clicked) {
                 extern void ExecAppTask(void*);
-                
-                if (i == 1) { // Kalkulator
-                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/CALC.ELF");
-                    start_menu_open = false;
-                } else if (i == 2) { // Ustawienia
-                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/SETTINGS.ELF");
-                    start_menu_open = false;
-                } else if (i == 3) { // Zegar
-                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/CLOCK.ELF");
-                    start_menu_open = false;
-                } else if (i == 5) { // O Systemie (przesunięty o 1 z powodu separatora)
-                    Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/WINVER.ELF");
-                    start_menu_open = false;
-                }
+                Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)start_menu_paths[i]);
+                start_menu_open = false;
             }
         }
-        
-        if (any_program_hovered) {
-            hover_frames++;
-            if (hover_frames > 45) programs_hovered_persistent = true; // Zwiększono czas otwarcia podmenu na ok 1.5s
-        } else {
-            hover_frames = 0;
-        }
-        
-        int sub_w = 150;
-        int sub_h = 104;
-        int sub_x = menu_w - 2;
-        int sub_y = menu_y + 4; // na wysokosci "Programy >"
-        
-        bool in_sub = false;
-        if (programs_hovered_persistent) {
-            in_sub = (mouse_x >= sub_x && mouse_x <= sub_x + sub_w && mouse_y >= sub_y && mouse_y <= sub_y + sub_h);
-            
-            if (!any_program_hovered && !in_sub) {
-                programs_hovered_persistent = false;
-            } else {
-                Framebuffer::DrawRect(sub_x, sub_y, sub_w, sub_h, 0xC0C0C0);
-                Framebuffer::DrawRect(sub_x, sub_y, sub_w, 2, 0xFFFFFF);
-                Framebuffer::DrawRect(sub_x, sub_y, 2, sub_h, 0xFFFFFF);
-                Framebuffer::DrawRect(sub_x + sub_w - 2, sub_y, 2, sub_h, 0x000000);
-                Framebuffer::DrawRect(sub_x, sub_y + sub_h - 2, sub_w, 2, 0x000000);
-                
-                const char* sub_items[] = { "Kalendarz", "Paint", "OxidePad", "Menedzer Zadan" };
-                for (int j = 0; j < 4; j++) {
-                    int bx = sub_x + 4;
-                    int by = sub_y + 4 + j * 24;
-                    int bw = sub_w - 8;
-                    int bh = 24;
-                    
-                    bool s_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
-                    
-                    uint32_t s_bg = s_hover ? 0x0000A0 : 0xC0C0C0;
-                    uint32_t s_fg = s_hover ? 0xFFFFFF : 0x000000;
-                    
-                    Framebuffer::DrawRect(bx, by, bw, bh, s_bg);
-                    Framebuffer::DrawString(sub_items[j], bx + 28, by + (bh - 8) / 2, s_fg, s_bg);
 
-                    
-                    if (s_hover && mouse_clicked) {
-                        if (j == 0) { // Kalendarz
-                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/CALENDAR.ELF");
-                        } else if (j == 1) { // Paint
-                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/PAINT.ELF");
-                        } else if (j == 2) { // OxidePad
-                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/NOTEPAD.ELF");
-                        } else if (j == 3) { // Taskmgr
-                            Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)"/usr/bin/TASKMGR.ELF");
-                        }
-                        start_menu_open = false;
-                        programs_hovered_persistent = false;
-                    }
-                }
-            }
-        }
-        
         if (mouse_clicked && !clicked_start_btn) {
             bool in_menu = (mouse_x >= 0 && mouse_x <= menu_w && mouse_y >= menu_y && mouse_y <= menu_y + menu_h);
-            if (!in_menu && !in_sub) {
+            if (!in_menu) {
                 start_menu_open = false;
-                programs_hovered_persistent = false;
             }
         }
-    } else {
-        programs_hovered_persistent = false;
-        hover_frames = 0;
     }
     
     // 5. Draw Mouse
