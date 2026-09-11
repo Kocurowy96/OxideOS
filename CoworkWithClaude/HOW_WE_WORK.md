@@ -52,6 +52,16 @@ agenta w chmurze na `daily-work`), nie tylko w czyjejś pamięci.
   libc/libgui, każda apka definiuje swoje małe helpery (itoa/strcpy/strcat) lokalnie zamiast
   współdzielonej biblioteki standardowej.
 
+## Uwaga dla agenta w chmurze (daily-work)
+
+Nikt nie jest obecny, żeby zatwierdzić monity o pozwolenie w trakcie autonomicznej sesji.
+Sprawdzone empirycznie (2026-09-11, testowe uruchomienie): `rm -rf` na katalogu (nawet
+stworzonym przez samego agenta, np. `limine_dir/`) potrafi wywołać monit "Dangerous rm
+operation", na który nikt nie odpowie — sesja wisi aż do timeoutu. Agent ma w swoim
+promptcie instrukcję żeby unikać takich wzorców i wybierać bardziej celowane alternatywy
+(np. `find dir -mindepth 1 -delete` zamiast `rm -rf dir/*`), ale warto o tym pamiętać przy
+rozbudowie instrukcji na przyszłość.
+
 ## Znane, zaakceptowane długi techniczne
 
 Nie naprawiać "przy okazji" bez wyraźnej decyzji — to świadome uproszczenia, nie przeoczenia:
