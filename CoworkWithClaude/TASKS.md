@@ -19,6 +19,17 @@ W dni szkolne (pon-pt, 9:00 czasu polskiego) w chmurze odpala się agent Claude,
 Wieczorem: `git fetch && git checkout daily-work` żeby zobaczyć/przetestować co się zmieniło.
 Panel: https://claude.ai/code/routines/trig_01WyfN223HwBRWFr65d18VKx
 
+Agent po każdym uruchomieniu dopisuje też lekki raport do `daily-work-report/` (patrz
+[README](../daily-work-report/README.md) i [szablon](../daily-work-report/TEMPLATE.md)) —
+szybszy podgląd co zrobił niż grzebanie w logach sesji w chmurze.
+
+**2026-09-11 wieczorem: zrobiony i zweryfikowany pierwszy pełny cykl testowy** (ręcznie
+odpalony, dwie próby). Pierwsza utknęła na `rm -rf limine_dir/*` (monit bezpieczeństwa bez
+nikogo do zatwierdzenia - poprawione w promptcie, patrz `HOW_WE_WORK.md`). Druga przeszła
+cały cykl: zakładka Mysz zaimplementowana, zbudowana, przetestowana headless w QEMU,
+zacommitowana i wypchnięta na świeżo utworzoną gałąź `daily-work` (commit `04d26f7`).
+Do przetestowania w prawdziwym GUI.
+
 ---
 
 ## Do zrobienia teraz
