@@ -27,9 +27,6 @@ extern volatile struct limine_hhdm_request hhdm_request;
 static void* bg_bmp = nullptr;
 void* Compositor::icon_bmp = nullptr;
 void* Compositor::cursor_bmp = nullptr;
-static void* icon_programy = nullptr;
-static void* icon_clock = nullptr;
-static void* icon_folder_32 = nullptr;
 static void* icon_settings = nullptr; // For later if added
 static void* icon_speaker = nullptr;
 
@@ -215,24 +212,6 @@ void Compositor::Init() {
     } else {
         SerialPort::WriteString("Compositor: Failed to load cursor_normal.bmp from VFS.\n");
     }
-    uint8_t* prog_buf = nullptr;
-    uint32_t prog_size = 0;
-    if (VFS::ReadFile("/icon_programy.bmp", &prog_buf, &prog_size)) {
-        icon_programy = prog_buf;
-    }
-    
-    uint8_t* clock_buf = nullptr;
-    uint32_t clock_size = 0;
-    if (VFS::ReadFile("/icon_clock.bmp", &clock_buf, &clock_size)) {
-        icon_clock = clock_buf;
-    }
-    
-    uint8_t* folder_buf = nullptr;
-    uint32_t folder_size = 0;
-    if (VFS::ReadFile("/icon_folder.bmp", &folder_buf, &folder_size)) {
-        icon_folder_32 = folder_buf;
-    }
-    
     uint8_t* speaker_buf = nullptr;
     uint32_t speaker_size = 0;
     if (VFS::ReadFile("/icon_speaker.bmp", &speaker_buf, &speaker_size)) {

@@ -34,7 +34,6 @@ Do przetestowania w prawdziwym GUI.
 
 ## Do zrobienia teraz
 
-- [ ] Sprzątnąć write-only ikony w `compositor.cpp` (`icon_programy`, `icon_clock`, `icon_folder_32` — ładowane, ale nigdzie już nie rysowane po przejściu na dynamiczne Menu Start)
 - [ ] Rozbić `scripts/run.sh` na osobne skrypty (ustalone 2026-09-11, planowane na najbliższą wspólną sesję): `scripts/build.sh` (sam kernel+apki), `scripts/make_disk.sh` (dysk.img+ISO z już zbudowanych binarek), `scripts/test_headless.sh` (build+dysk+boot w QEMU bez GUI, log do pliku, jasny PASS/FAIL), `scripts/run.sh` zostaje jako punkt wejścia z GUI wołający powyższe zamiast duplikować logikę
 
 ## Do przegadania
@@ -49,6 +48,7 @@ Do przetestowania w prawdziwym GUI.
 
 ## Zrobione
 
+- [x] (2026-09-14) Sprzątnięcie write-only ikon w `compositor.cpp` — usunięte `icon_programy`, `icon_clock`, `icon_folder_32` (statyczne zmienne + odpowiadające im wczytania `VFS::ReadFile` w `Init()`), bo nigdzie już nie były rysowane po przejściu na dynamiczne Menu Start. Zweryfikowane pełnym czystym buildem i headless bootem w QEMU (logi pokazują trzy mniej odczytów z FAT32 przy starcie, bez regresji).
 - [x] (2026-09-11) Ustawienia: zakładka **Mysz** (czułość kursora 25-300%, `-`/`+`, kolejność Wyświetlacz → System → Dźwięk → Mysz) — nowe syscalle 11/12 (`sys_set_mouse_speed`/`sys_get_mouse_speed`), mnożnik czułości w `Mouse::HandleInterrupt` (dotyczy tylko trybu relatywnego PS/2 — QEMU domyślnie używa VMMouse w trybie absolutnym, więc efekt nie jest widoczny pod QEMU, ale realny na sprzęcie/w trybie relatywnym)
 - [x] (2026-09-10) LFN w FAT32, Start Menu (styl + ikony), optymalizacja I/O dysku, redesign Panelu Sterowania (kafelki, tapety z miniaturkami)
 - [x] (2026-09-11) Fix kompilacji (`icon_speaker`), tray z ikoną głośnika, sprzątanie repo (`.ELF`/`.bmp`/`.a` w gitignore)
