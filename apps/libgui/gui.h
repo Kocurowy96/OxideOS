@@ -28,6 +28,7 @@ int sys_kill_task(unsigned long long task_id);
 int sys_draw_bmp(int win_id, const char* path, int x, int y);
 void sys_exit();
 int sys_write_file(const char* path, const uint8_t* buffer, uint32_t size);
+int sys_read_file(const char* path, uint8_t* buffer, uint32_t max_size);
 
 struct DateTime {
     uint8_t year, month, day, hour, minute, second;

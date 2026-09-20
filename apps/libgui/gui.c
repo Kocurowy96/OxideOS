@@ -39,6 +39,13 @@ int sys_write_file(const char* path, const uint8_t* buf, uint32_t size) {
     return (int)ret;
 }
 
+int sys_read_file(const char* path, uint8_t* buf, uint32_t max_size) {
+    long syscall_num = 5;
+    long ret;
+    asm volatile("int $0x80" : "=a"(ret) : "a"(syscall_num), "D"(path), "S"(buf), "d"((long)max_size));
+    return (int)ret;
+}
+
 int sys_get_time(struct DateTime* dt) {
     long syscall_num = 4;
     long ret;

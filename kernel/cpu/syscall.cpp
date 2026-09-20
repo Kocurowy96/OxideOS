@@ -89,6 +89,20 @@ void Syscall::Handler(Registers* regs) {
         } else {
             regs->rax = 0;
         }
+    } else if (syscall_num == 5) { // sys_read_file
+        const char* path = (const char*)regs->rdi;
+        uint8_t* out_buf = (uint8_t*)regs->rsi;
+        uint32_t max_size = (uint32_t)regs->rdx;
+        uint8_t* file_buf = nullptr;
+        uint32_t file_size = 0;
+        if (out_buf && VFS::ReadFile(path, &file_buf, &file_size)) {
+            uint32_t copy_size = file_size < max_size ? file_size : max_size;
+            for (uint32_t i = 0; i < copy_size; i++) out_buf[i] = file_buf[i];
+            VFS::FreeFile(file_buf, file_size);
+            regs->rax = copy_size;
+        } else {
+            regs->rax = 0;
+        }
     } else if (syscall_num == 6) { // sys_get_mem_info
         uint64_t* total = (uint64_t*)regs->rdi;
         uint64_t* free = (uint64_t*)regs->rsi;
