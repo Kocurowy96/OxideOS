@@ -51,7 +51,11 @@ agenta w chmurze na `daily-work`), nie tylko w czyjejś pamięci.
   `compositor.cpp` próbkuje stan raz na przebieg pętli renderowania, a klik bez
   przytrzymania (down+up niemal jednocześnie) często nie trafiał w to okno próbkowania i
   GUI go "nie widziało". `qmp_input.py` ma to już wbudowane (`CLICK_HOLD_SECONDS`), nie
-  trzeba tego pamiętać przy każdym użyciu.
+  trzeba tego pamiętać przy każdym użyciu. `scripts/gdb_inspect.sh <plik_komend_gdb>
+  [wait_s]` dokłada etap 2 — podgląd rejestrów/pamięci/aktualnie wykonywanej instrukcji
+  przez GDB stub QEMU (`-s`, bez `-S` — łapie stan "w locie", nie od resetu), przydatne przy
+  trudnych bugach (np. coś jak scheduler 2026-09-11) zamiast zgadywać z samego logu
+  serialowego.
 
 ## Styl kodu
 

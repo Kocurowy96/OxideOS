@@ -108,13 +108,17 @@ log serialowy, sprząta gniazdo/proces QEMU. Przetestowane end-to-end — dział
 - Użycie: szybkie "jak wygląda GUI teraz" bez czekania na człowieka przy ekranie — przydatne
   też dla mnie żeby zweryfikować UI zamiast tylko czytać logi serial.
 
-### Etap 2: inspekcja RAM/rejestrów/instrukcji (GDB stub QEMU)
-- `qemu-system-x86_64 -s -S ...` wystawia gościa pod `gdb` na `localhost:1234`, zero zmian
-  w kernelu OxideOS potrzebnych.
-- Wrapper: skrypt Python z `gdb -batch -ex "target remote :1234" -ex "..."` do zrzutu
-  rejestrów/pamięci na żądanie.
-- To by dziś realnie pomogło przy buggu ze schedulerem - łatwiej zobaczyć stan zamiast
-  zgadywać z logów serialowych.
+### Etap 2: inspekcja RAM/rejestrów/instrukcji (GDB stub QEMU) — ZROBIONE (2026-09-20)
+`scripts/gdb_inspect.sh <plik_komend_gdb> [wait_s]` - boot headless z `-s` (gdbstub na
+`:1234`, celowo BEZ `-S` - gość bootuje normalnie, GDB dołącza się po `wait_s` i przerywa
+wykonanie w tym momencie, nie od resetu, żeby móc łapać stan "w locie"), potem
+`gdb -batch -ex "target remote :1234" -ex <komenda z pliku>...` - jedna komenda GDB na
+linię w pliku wejściowym. Celowo bez `-enable-kvm` - czysty TCG jest przewidywalny pod GDB,
+KVM bywa ograniczony w zależności od wersji. Kernel.elf nie ma pełnego DWARF (kompilujemy
+bez `-g`), ale ma symbole (mangled C++, GDB demanguje automatycznie) - `bt`/`x/i $pc`
+pokazują realne nazwy funkcji. Przetestowane na żywo: złapało system w środku
+`Framebuffer::Clear` wywołanego z `Compositor::Render` z `DesktopTask` - dokładnie taki
+wgląd, jaki by się przydał przy diagnozowaniu buga ze schedulerem 2026-09-11.
 
 ### Etap 3: interakcja mysz/klawiatura bez człowieka (QMP `input-send-event`) — ZROBIONE (2026-09-20)
 `scripts/qmp_input.py` (klient QMP, dzieli `qmp_client.py` z `qmp_screendump.py`) - komendy
