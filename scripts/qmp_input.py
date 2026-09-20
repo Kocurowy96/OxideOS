@@ -14,10 +14,31 @@ DEFAULT_SCREEN = (1280, 720)
 # petla czasem nie zdazy zauwazyc przejscia stanu (zmierzone empirycznie 2026-09-20).
 CLICK_HOLD_SECONDS = 0.15
 
-# Tylko znaki realnie potrzebne w testach UI OxideOS (bez polskich znakow diakrytycznych).
-_CHAR_TO_QCODE = {' ': 'spc', '\n': 'ret', '\t': 'tab', '.': 'dot', ',': 'comma', '-': 'minus'}
-for _c in 'abcdefghijklmnopqrstuvwxyz0123456789':
-    _CHAR_TO_QCODE[_c] = _c
+# Mapa znak -> (qcode, czy_potrzebny_shift). Pelny zestaw znakow z US QWERTY, ktory kernel
+# OxideOS faktycznie obsluguje od 2026-09-20 (Shift/Caps Lock w kernel/drivers/ps2_kbd.cpp) -
+# bez polskich znakow diakrytycznych, tych kernel nie mapuje.
+_CHAR_MAP = {' ': ('spc', False), '\n': ('ret', False), '\t': ('tab', False)}
+for _c in 'abcdefghijklmnopqrstuvwxyz':
+    _CHAR_MAP[_c] = (_c, False)
+    _CHAR_MAP[_c.upper()] = (_c, True)
+for _d in '0123456789':
+    _CHAR_MAP[_d] = (_d, False)
+for _sym, _digit_qcode in {'!': '1', '@': '2', '#': '3', '$': '4', '%': '5',
+                           '^': '6', '&': '7', '*': '8', '(': '9', ')': '0'}.items():
+    _CHAR_MAP[_sym] = (_digit_qcode, True)
+_CHAR_MAP.update({
+    '-': ('minus', False), '_': ('minus', True),
+    '=': ('equal', False), '+': ('equal', True),
+    '[': ('bracket_left', False), '{': ('bracket_left', True),
+    ']': ('bracket_right', False), '}': ('bracket_right', True),
+    ';': ('semicolon', False), ':': ('semicolon', True),
+    "'": ('apostrophe', False), '"': ('apostrophe', True),
+    '`': ('grave_accent', False), '~': ('grave_accent', True),
+    '\\': ('backslash', False), '|': ('backslash', True),
+    ',': ('comma', False), '<': ('comma', True),
+    '.': ('dot', False), '>': ('dot', True),
+    '/': ('slash', False), '?': ('slash', True),
+})
 
 
 def _key_event(qcode, down):
@@ -31,11 +52,11 @@ def press_key(client, qcode):
 
 def type_text(client, text):
     for ch in text:
-        qcode = _CHAR_TO_QCODE.get(ch.lower())
-        if qcode is None:
+        mapped = _CHAR_MAP.get(ch)
+        if mapped is None:
             print(f"Pomijam nieznany znak: {ch!r}", file=sys.stderr)
             continue
-        shift = ch.isupper()
+        qcode, shift = mapped
         if shift:
             client.call({"execute": "input-send-event", "arguments": {"events": [_key_event("shift", True)]}})
         press_key(client, qcode)
