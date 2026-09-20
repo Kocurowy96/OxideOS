@@ -1,5 +1,6 @@
 #include <gui.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 char display[32];
 int current_val = 0;

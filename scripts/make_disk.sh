@@ -5,9 +5,18 @@ set -e
 cd "$(dirname "$0")/.."
 
 # Build limine host tool if not exists
-if [ ! -f limine_dir/limine ]; then
+if [ ! -f limine_dir/limine ] && [ ! -f limine_dir/bin/limine ]; then
     echo "Building Limine host tool..."
     make -C limine_dir
+fi
+
+# Sciezka do zbudowanej binarki limine rozni sie miedzy wersjami/konfiguracjami configure
+# (widziane: limine_dir/limine lokalnie, limine_dir/bin/limine na swiezym configure w
+# kontenerze agenta w chmurze) - wykrywamy ktora istnieje zamiast zakladac jedna z gory.
+if [ -f limine_dir/bin/limine ]; then
+    LIMINE_BIN=limine_dir/bin/limine
+else
+    LIMINE_BIN=limine_dir/limine
 fi
 
 # Prepare ISO directory
@@ -114,6 +123,6 @@ xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
         iso_root -o oxideos.iso > /dev/null 2>&1
 
 # Install limine to ISO for BIOS boot
-./limine_dir/limine bios-install oxideos.iso > /dev/null 2>&1
+"./$LIMINE_BIN" bios-install oxideos.iso > /dev/null 2>&1
 
 echo "OxideOS ISO generated at oxideos.iso"

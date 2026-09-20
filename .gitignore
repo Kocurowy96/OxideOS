@@ -6,7 +6,7 @@ iso_root/
 *.a
 *.elf
 *.ELF
-.serenity
+.serenity/
 disk.img
 *.iso
 *.wav

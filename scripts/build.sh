@@ -15,6 +15,10 @@ gcc -c apps/libgui/gui.c -o apps/libgui/gui.o -ffreestanding -O2 -Wall -Wextra -
 ar rcs apps/libgui/libgui.a apps/libgui/gui.o
 
 gcc -c apps/hello/main.c -o apps/hello/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
+# Niektore wersje binutils (widziane w kontenerze agenta w chmurze, nie lokalnie) uklada
+# segmenty tak, ze .note.gnu.property nachodzi na .text przy tak niskim -Ttext - usuwamy
+# ta sekcje, nie jest nam do niczego potrzebna we freestanding ELF.
+objcopy --remove-section=.note.gnu.property apps/hello/main.o
 ld -nostdlib -Ttext 0x400000 apps/hello/main.o apps/libgui/gui.o -o HELLO.ELF -no-pie
 
 gcc -c apps/settings/main.c -o apps/settings/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
