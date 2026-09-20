@@ -38,6 +38,20 @@ agenta w chmurze na `daily-work`), nie tylko w czyjejś pamięci.
 - Przy trudnych do zreprodukowania bugach: nie zgadywać w ciemno. Odtworzyć syntetycznie
   (tymczasowy kod diagnostyczny + headless run), potwierdzić przyczynę na twardych danych,
   dopiero potem naprawiać. Usunąć kod diagnostyczny po potwierdzeniu.
+- **Port debugowy (od 2026-09-20)** — `scripts/screendump.sh [out.png] [wait_s]` robi
+  zrzut ekranu GUI z headless QEMU przez QMP `screendump`, bez żadnego wyświetlacza. Nie
+  jest ograniczony do maszyny Kocurowy96 — to samo QMP działa identycznie w kontenerze
+  agenta w chmurze, więc **agent też może wizualnie zweryfikować zmianę w GUI**, nie tylko
+  czytać log serialowy. `scripts/headless_interact.sh <scenariusz.txt> [katalog_wyjściowy]
+  [boot_wait_s]` dokłada sterowanie mysza/klawiatura (klik, scroll, wpisywanie tekstu) +
+  zrzuty ekranu w trakcie, z pliku-scenariusza (format opisany w komentarzu na górze
+  skryptu) — pozwala np. otworzyć Menu Start, kliknąć apkę, zrobić zrzut, bez człowieka
+  przy klawiaturze. **Ważne odkrycie przy wdrażaniu:** klik trzeba trzymać chwilę (down →
+  sleep ~150ms → up) — `mouse_clicked = mouse_left && !prev_mouse_left` w
+  `compositor.cpp` próbkuje stan raz na przebieg pętli renderowania, a klik bez
+  przytrzymania (down+up niemal jednocześnie) często nie trafiał w to okno próbkowania i
+  GUI go "nie widziało". `qmp_input.py` ma to już wbudowane (`CLICK_HOLD_SECONDS`), nie
+  trzeba tego pamiętać przy każdym użyciu.
 
 ## Styl kodu
 

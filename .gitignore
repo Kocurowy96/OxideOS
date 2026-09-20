@@ -14,6 +14,7 @@ qemu_audio.wav
 kocurowy96-moje_rzeczy_do_dev/
 TODO_ASSETS.md
 grafiki_do_zrobienia.md
+__pycache__/
 
 # Assety BMP wygenerowane automatycznie przez scripts/run.sh z plikow .png
 # (trzymamy w repo tylko zrodla .png; wyjatki nizej to oryginalne bitmapy bez zrodla .png)

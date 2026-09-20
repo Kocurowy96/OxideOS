@@ -96,7 +96,12 @@ zamiast duplikować kod.
 
 Robić **etapami**, każdy kolejny tylko jeśli poprzedni się sprawdzi:
 
-### Etap 1: zrzuty ekranu (najprostszy, zrobić najpierw)
+### Etap 1: zrzuty ekranu (najprostszy, zrobić najpierw) — ZROBIONE (2026-09-20)
+`scripts/screendump.sh [out.png] [wait_s]` + `scripts/qmp_screendump.py` (klient QMP w
+Pythonie, handshake capabilities + `screendump`). Boot headless z `-qmp unix:...,server,nowait`,
+czeka `wait_s` (domyślnie 8s), zrzuca PPM, konwertuje do PNG (`magick`/`convert`), drukuje
+log serialowy, sprząta gniazdo/proces QEMU. Przetestowane end-to-end — działa.
+
 - QMP (`-qmp unix:/tmp/oxideos-qmp.sock,server,nowait`) + prosty Python/bash wrapper wołający
   `screendump` przez gniazdo. Zapisuje PPM, konwertuje do PNG (mamy już ImageMagick w projekcie
   do konwersji assetów, więc `magick shot.ppm shot.png` za darmo).
@@ -111,10 +116,30 @@ Robić **etapami**, każdy kolejny tylko jeśli poprzedni się sprawdzi:
 - To by dziś realnie pomogło przy buggu ze schedulerem - łatwiej zobaczyć stan zamiast
   zgadywać z logów serialowych.
 
-### Etap 3: interakcja mysz/klawiatura bez człowieka (QMP `input-send-event`)
-- Do zautomatyzowanych testów UI (np. "kliknij Start, kliknij Ustawienia, sprawdź czy
-  sidebar renderuje się poprawnie" bez ręcznego klikania).
-- Więcej roboty niż etap 1/2 - trzeba zmapować współrzędne ekranu, sekwencję zdarzeń.
+### Etap 3: interakcja mysz/klawiatura bez człowieka (QMP `input-send-event`) — ZROBIONE (2026-09-20)
+`scripts/qmp_input.py` (klient QMP, dzieli `qmp_client.py` z `qmp_screendump.py`) - komendy
+`move X Y`, `click --button left/right/middle [--at X Y]`, `scroll up/down [--amount N]`,
+`key QCODE`, `type "tekst"`. `scripts/headless_interact.sh <scenariusz> [katalog] [boot_wait_s]`
+spina to z etapem 1 (zrzuty ekranu) w jeden przebieg sterowany plikiem-scenariuszem (format w
+komentarzu na górze skryptu) - boot headless, seria akcji (ruch/klik/scroll/klawiatura/zrzut),
+sprzątnięcie QEMU na końcu.
+
+**Namierzony i naprawiony realny problem przy testowaniu:** pierwsza wersja `click()` robiła
+`btn down` i `btn up` bez przerwy - kliknięcia w ogóle nie były wykrywane przez GUI (testowane
+na przycisku "OK" okienka powitalnego i na "Start" - kursor trafiał dokładnie w cel, ale nic
+się nie działo). Przyczyna: `compositor.cpp` wykrywa klik przez `mouse_left && !prev_mouse_left`,
+próbkowane raz na przebieg pętli renderowania - down+up bez przerwy potrafiło "zmieścić się"
+między dwoma próbkowaniami i zostać całkowicie przeoczone. Fix: 150ms przytrzymania między
+down i up (`CLICK_HOLD_SECONDS` w `qmp_input.py`). Po tej poprawce potwierdzone działające:
+zamknięcie okienka powitalnego kliknięciem OK, otwarcie Menu Start kliknięciem, uruchomienie
+apki z Menu Start, wpisywanie tekstu klawiaturą (log serialowy pokazuje wpisane znaki), scroll
+(nie wywala się - w OxideOS nie ma dziś żadnego scrollowalnego widgetu do wizualnej weryfikacji,
+ale mechanizm identyczny jak klik).
+
+**Zastosowanie dla agenta w chmurze:** to samo QMP działa identycznie bez żadnego wyświetlacza,
+więc `headless_interact.sh`/`screendump.sh` mogą być używane też w kontenerze agenta - daje
+mu to realną weryfikację wizualną zmian w GUI, nie tylko czytanie logu serialowego. Patrz
+`HOW_WE_WORK.md`.
 
 ### Etap 4: nagrywanie wideo (opcjonalne, najmniej pilne)
 - **Tylko lokalnie** (Garuda Linux/KWin/Wayland, ASUS TUF Gaming A15) - w chmurze nie ma sensu.
