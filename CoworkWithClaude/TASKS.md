@@ -34,13 +34,13 @@ Do przetestowania w prawdziwym GUI.
 
 ## Do zrobienia teraz
 
-(pusto — patrz "Zrobione" niżej za ostatnią pozycję)
+- [ ] **Ext2 Faza 1a** (patrz `PLAN_ext2_filesystem.md` po pełny kontekst i uzasadnienie): nowy `kernel/fs/ext2.h`/`ext2.cpp` (interfejs jak `fat32.h`: `Init`/`ReadFile`/`WriteFile`/`FreeFile`/`ListDirectory`, na razie same deklaracje + `Init()`). `Init()` parsuje superblok i tablicę deskryptorów grup bloków z `disk.img` (na razie wciąż FAT32-owy — ext2 driver rozwijamy równolegle, NIE podłączać jeszcze do `VFS::`, `FAT32::` zostaje aktywny), loguje `Ext2: Initialized successfully.` analogicznie do dzisiejszego FAT32. Do testu: zbuduj lokalnie testowy obraz przez `mke2fs -t ext2 test.img` (poza `scripts/make_disk.sh`, osobny plik testowy), wgraj przez `dd`/ATA na drugi dysk QEMU (`-hdb test.img`) i zweryfikuj że `Ext2::Init()` poprawnie odczytuje pola superbloku (magic number 0xEF53, rozmiar bloku, liczba i-węzłów/grup itd.) — porównaj z tym co pokazuje `dumpe2fs test.img` na hoście. To jedyny krok Fazy 1 na liście na razie — kolejne (1b: odczyt i-węzłów, itd.) dopisujemy po ukończeniu tego, nie wszystkie na raz.
 
 ## Do przegadania
 
 - [ ] `libgui` (`gui_draw_rect`/`gui_draw_string`) nie sprawdza granic w Y w ogóle (i `gui_draw_string` w ogóle nie sprawdza X) — znalezione 2026-09-20 przy naprawianiu Notatnika. Dziś każda apka musi sama pilnować żeby nie rysować poza `win_h`/`win_w` (Notatnik ma teraz własny scroll-clamp jako obejście), ale to systemowa dziura — bez per-process page tables przekroczenie granicy okna to zapis w cudzą pamięć (innego okna albo jądra), nie tylko wizualny glicz. Wymaga dodania `win_h` do sygnatur obu funkcji w `apps/libgui/gui.h`/`gui.c` i przejścia przez wszystkie call site'y w każdej apce — szerszy zasięg zmiany, do przegadania.
 - [ ] Redesign assetów — wbudowanie kluczowych plików (kursor, ikony) w binarkę kernela zamiast ładowania z FAT32 w runtime (patrz `podsumowanie_projektu.md` / decyzja z 2026-09-10)
-- [ ] Przepisanie systemu plików FAT32 → **ext4** (nie exFAT — decyzja z 2026-09-11: łatwiejszy transfer z Linuksa, lepsze multi-user; dobra okazja żeby przy okazji dodać porządne locki zamiast dzisiejszego "duct tape" z `critical.h`)
+- [ ] Ext2 Fazy 1b-3 (odczyt i-węzłów/katalogów/plików, potem zapis, potem integracja z VFS i przełączenie `disk.img`) — pełny rozpisany plan w `PLAN_ext2_filesystem.md`, dopisywać do "Do zrobienia teraz" krok po kroku w miarę postępu Fazy 1a, nie hurtowo.
 - [ ] Menu Start: rekursywne submenu dla podfolderów w `/usr/bin` (dziś płaska lista — do rozszerzenia jak pojawi się realny podfolder do przetestowania)
 - [ ] Skompilować i odpalić SerenityOS lokalnie (mamy klon w `.serenity/`) — rekonesans, jak wygląda dojrzały hobby-OS i jak Ladybird tam faktycznie działa
 - [ ] Sieć / TCP-IP stack — zero na razie w OxideOS; wymagane zanim jakikolwiek browser (nawet coś dużo mniejszego niż Ladybird) miałby sens
