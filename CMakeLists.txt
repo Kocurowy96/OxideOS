@@ -38,6 +38,7 @@ set(KERNEL_SOURCES
     kernel/drivers/ac97.cpp
     kernel/fs/vfs.cpp
     kernel/fs/fat32.cpp
+    kernel/fs/ext2.cpp
     kernel/fs/elf.cpp
     kernel/mem/pmm.cpp
     kernel/mem/vmm.cpp

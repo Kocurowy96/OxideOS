@@ -38,32 +38,62 @@ bool ATA::ReadSector(uint32_t lba, uint8_t* buffer) {
 }
 
 bool ATA::ReadSectors(uint32_t lba, uint8_t count, uint8_t* buffer) {
+    return ReadSectorsInternal(0xE0, lba, count, buffer);
+}
+
+bool ATA::ReadSectorSlave(uint32_t lba, uint8_t* buffer) {
+    return ReadSectorsSlave(lba, 1, buffer);
+}
+
+bool ATA::ReadSectorsSlave(uint32_t lba, uint8_t count, uint8_t* buffer) {
+    return ReadSectorsInternal(0xF0, lba, count, buffer);
+}
+
+// Limit petli oczekiwania na BSY/DRQ - bez tego brak dysku (np. nieobecny primary
+// slave, kiedy Ext2:: testuje bez podlaczonego drugiego dysku QEMU) potrafi zawiesic
+// caly rozruch w nieskonczonosc: DRQ nigdy sie nie ustawia, a status rejestru nie
+// zawsze wraca 0xFF jak dla calkiem odlaczonej magistrali (patrz ATA::Init()).
+#define ATA_MAX_POLL_SPINS 1000000
+
+bool ATA::ReadSectorsInternal(uint8_t drive_select_base, uint32_t lba, uint8_t count, uint8_t* buffer) {
     EnterCritical();
-    outb(ATA_PRIMARY_DRIVE_HEAD, 0xE0 | ((lba >> 24) & 0x0F));
+    outb(ATA_PRIMARY_DRIVE_HEAD, drive_select_base | ((lba >> 24) & 0x0F));
     outb(ATA_PRIMARY_ERR, 0x00);
     outb(ATA_PRIMARY_SECCOUNT, count);
     outb(ATA_PRIMARY_LBA_LO, (uint8_t)lba);
     outb(ATA_PRIMARY_LBA_MID, (uint8_t)(lba >> 8));
     outb(ATA_PRIMARY_LBA_HI, (uint8_t)(lba >> 16));
-    
+
     // Command 0x20: Read Sectors with Retry
     outb(ATA_PRIMARY_COMM_STAT, 0x20);
-    
+
     uint16_t* ptr = (uint16_t*)buffer;
-    
+
     for (int i = 0; i < count; i++) {
+        uint32_t spins = 0;
         uint8_t status = inb(ATA_PRIMARY_COMM_STAT);
         while ((status & 0x80) && !(status & 0x01)) { // BSY set and ERR clear
+            if (++spins > ATA_MAX_POLL_SPINS) {
+                SerialPort::WriteString("ATA: Read timeout (BSY) - drive not present?\n");
+                ExitCritical();
+                return false;
+            }
             status = inb(ATA_PRIMARY_COMM_STAT);
         }
-        
+
         if (status & 0x01) { // ERR set
             SerialPort::WriteString("ATA: Read Error!\n");
             ExitCritical();
             return false;
         }
 
+        spins = 0;
         while (!(status & 0x08)) { // DRQ clear
+            if (++spins > ATA_MAX_POLL_SPINS) {
+                SerialPort::WriteString("ATA: Read timeout (DRQ) - drive not present?\n");
+                ExitCritical();
+                return false;
+            }
             status = inb(ATA_PRIMARY_COMM_STAT);
         }
 
