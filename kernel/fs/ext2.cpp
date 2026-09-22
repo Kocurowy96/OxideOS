@@ -65,6 +65,35 @@ struct __attribute__((packed)) Ext2GroupDesc {
     uint8_t  reserved[12];
 };
 
+// Uklad i-wezla wg specyfikacji ext2 (rewizja 0/1, 128 bajtow) - Faza 1b. osd1/osd2
+// (pola zalezne od OS tworzacego system plikow) sa nam na razie niepotrzebne, ale
+// trzymane w strukturze zeby zachowac poprawny total size/offsety kolejnych pol.
+struct __attribute__((packed)) Ext2Inode {
+    uint16_t mode;
+    uint16_t uid;
+    uint32_t size;          // dolne 32 bity - dla plikow >4GB trzeba tez dir_acl (size_high)
+    uint32_t atime;
+    uint32_t ctime;
+    uint32_t mtime;
+    uint32_t dtime;
+    uint16_t gid;
+    uint16_t links_count;
+    uint32_t blocks;        // liczba 512-bajtowych sektorow (NIE blokow block_size!)
+    uint32_t flags;
+    uint32_t osd1;
+    uint32_t block[15];     // 12 bezposrednich + pojedynczo/podwojnie/potrojnie posredni
+    uint32_t generation;
+    uint32_t file_acl;
+    uint32_t dir_acl;       // size_high dla plikow >4GB (na razie nieobslugiwane)
+    uint32_t faddr;
+    uint8_t  osd2[12];
+};
+
+#define EXT2_S_IFMT  0xF000
+#define EXT2_S_IFDIR 0x4000
+#define EXT2_S_IFREG 0x8000
+#define EXT2_ROOT_INODE 2
+
 static Ext2Superblock superblock;
 static uint32_t block_size = 0;
 static uint32_t block_groups_count = 0;
@@ -116,6 +145,31 @@ static bool ReadDiskBytes(uint32_t byte_offset, uint32_t length, uint8_t* out) {
         lba++;
     }
     return true;
+}
+
+// Faza 1b: lokalizacja i-wezla po numerze (numeracja od 1, i-wezel 0 nie istnieje).
+// grupa = (inode_nr - 1) / inodes_per_group, indeks w grupie = (inode_nr - 1) %
+// inodes_per_group, offset bajtowy = group_desc_table[grupa].inode_table * block_size
+// + indeks * inode_size (inode_size z superbloku - juz wczytywany w Init(), dostepny
+// tu jako pole statycznego modulowego `superblock`, wiec nie trzeba osobnej zmiennej).
+static bool ReadInode(uint32_t inode_nr, Ext2Inode* out) {
+    if (inode_nr == 0 || group_desc_table == nullptr) return false;
+
+    uint32_t index = inode_nr - 1;
+    uint32_t group = index / superblock.inodes_per_group;
+    uint32_t index_in_group = index % superblock.inodes_per_group;
+    if (group >= block_groups_count) return false;
+
+    uint32_t inode_size = superblock.inode_size ? superblock.inode_size : 128;
+    uint64_t byte_offset = (uint64_t)group_desc_table[group].inode_table * block_size
+                          + (uint64_t)index_in_group * inode_size;
+
+    // inode_size moze byc wiekszy niz sizeof(Ext2Inode) (np. 256 przy nowszych
+    // mke2fs z rozszerzonymi atrybutami) - czytamy tylko pola ktore rozumiemy.
+    uint32_t read_size = sizeof(Ext2Inode);
+    if (inode_size < read_size) read_size = inode_size;
+
+    return ReadDiskBytes((uint32_t)byte_offset, read_size, (uint8_t*)out);
 }
 
 void Ext2::Init() {
@@ -185,5 +239,27 @@ void Ext2::Init() {
     SerialPort::WriteString(" inode_table="); print_uint32(group_desc_table[0].inode_table);
     SerialPort::WriteString(" free_blocks="); print_uint32(group_desc_table[0].free_blocks_count);
     SerialPort::WriteString(" free_inodes="); print_uint32(group_desc_table[0].free_inodes_count);
+    SerialPort::WriteString("\n");
+
+    // Faza 1b: odczyt i-wezla root (zawsze numer 2 w ext2) - do reczne porownania
+    // z `debugfs -R "stat <2>" test.img` na hoscie (weryfikacja Fazy 1b).
+    Ext2Inode root_inode;
+    if (!ReadInode(EXT2_ROOT_INODE, &root_inode)) {
+        SerialPort::WriteString("Ext2: Failed to read root inode.\n");
+        return;
+    }
+
+    SerialPort::WriteString("Ext2: root inode mode="); print_hex32(root_inode.mode);
+    if ((root_inode.mode & EXT2_S_IFMT) == EXT2_S_IFDIR) {
+        SerialPort::WriteString(" (S_IFDIR - OK)");
+    } else {
+        SerialPort::WriteString(" (NOT a directory - unexpected!)");
+    }
+    SerialPort::WriteString(" size="); print_uint32(root_inode.size);
+    SerialPort::WriteString(" links_count="); print_uint32(root_inode.links_count);
+    SerialPort::WriteString(" blocks="); print_uint32(root_inode.blocks);
+    SerialPort::WriteString("\n");
+    SerialPort::WriteString("Ext2: root inode block[0]="); print_uint32(root_inode.block[0]);
+    SerialPort::WriteString(" block[1]="); print_uint32(root_inode.block[1]);
     SerialPort::WriteString("\n");
 }
