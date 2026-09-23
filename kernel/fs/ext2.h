@@ -2,13 +2,15 @@
 #include <stdint.h>
 #include "dirent.h"
 
-// Faza 1a/1b (patrz CoworkWithClaude/PLAN_ext2_filesystem.md): na razie tylko Init()
-// parsuje superblok + tablice deskryptorow grup blokow i (Faza 1b) odczytuje i loguje
-// i-wezel root jako test. Odczyt dowolnego i-wezla (Ext2Inode, ReadInode) zyje na
-// razie tylko w ext2.cpp - bedzie potrzebny reszcie Fazy 1 (1c: rozwiazywanie sciezek,
-// 1d: ListDirectory, 1e/1f: ReadFile), wtedy przeniesie sie/rozszerzy w miare potrzeb.
-// Sterownik NIE jest jeszcze podlaczony do VFS:: - disk.img zostaje FAT32-owy,
-// testujemy na osobnym obrazie mke2fs podlaczonym jako drugi dysk QEMU (patrz ext2.cpp).
+// Faza 1a/1b/1c (patrz CoworkWithClaude/PLAN_ext2_filesystem.md): na razie tylko Init()
+// parsuje superblok + tablice deskryptorow grup blokow, (Faza 1b) odczytuje i loguje
+// i-wezel root jako test, (Faza 1c) rozwiazuje testowa sciezke "/lost+found" przez
+// nowa ResolvePath. Odczyt i-wezla (Ext2Inode/ReadInode) i rozwiazywanie sciezek
+// (ResolvePath, parser wpisow katalogowych) zyja na razie tylko w ext2.cpp - beda
+// potrzebne reszcie Fazy 1 (1d: ListDirectory, 1e/1f: ReadFile), wtedy przeniesie
+// sie/rozszerzy w miare potrzeb. Sterownik NIE jest jeszcze podlaczony do VFS:: -
+// disk.img zostaje FAT32-owy, testujemy na osobnym obrazie mke2fs podlaczonym jako
+// drugi dysk QEMU (patrz ext2.cpp).
 class Ext2 {
 public:
     static void Init();

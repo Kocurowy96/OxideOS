@@ -94,6 +94,22 @@ struct __attribute__((packed)) Ext2Inode {
 #define EXT2_S_IFREG 0x8000
 #define EXT2_ROOT_INODE 2
 
+// Faza 1c wspiera bloki do 4KiB (najwiekszy rozmiar jaki wspolczesny mke2fs realnie
+// uzywa na x86 - domyslny to 4096). Wieksze bloki (rzadkie, wymagalyby stron > 4KiB)
+// sa odrzucane w ReadDirectoryFirstBlock zamiast przepelnic ponizszy bufor.
+#define EXT2_MAX_BLOCK_SIZE 4096
+
+// Format wpisu katalogowego ext2 (klasyczny, bez htree): stala czesc + nazwa BEZ
+// terminatora '\0' o dlugosci name_len zaraz po strukturze. Kolejny wpis zaczyna sie
+// rec_len bajtow dalej - wpisy wypelniaja caly blok, ostatni w bloku ma rec_len
+// "dociagniety" do konca bloku (nie ma jawnego terminatora listy wpisow).
+struct __attribute__((packed)) Ext2DirEntry {
+    uint32_t inode;
+    uint16_t rec_len;
+    uint8_t  name_len;
+    uint8_t  file_type;
+};
+
 static Ext2Superblock superblock;
 static uint32_t block_size = 0;
 static uint32_t block_groups_count = 0;
@@ -170,6 +186,92 @@ static bool ReadInode(uint32_t inode_nr, Ext2Inode* out) {
     if (inode_size < read_size) read_size = inode_size;
 
     return ReadDiskBytes((uint32_t)byte_offset, read_size, (uint8_t*)out);
+}
+
+// Faza 1c: czyta tylko pierwszy blok bezposredni katalogu (block[0]). Uproszczenie
+// swiadome - katalogi wieksze niz jeden blok (np. >200 wpisow przy 1KiB blokach) nie
+// sa jeszcze obslugiwane, do rozszerzenia przy okazji 1e/1f (odczyt przez kolejne
+// bloki bezposrednie/posrednie tak jak dla zwyklych plikow).
+static bool ReadDirectoryFirstBlock(const Ext2Inode* dir_inode, uint8_t* out_buffer) {
+    if (block_size == 0 || block_size > EXT2_MAX_BLOCK_SIZE) return false;
+    if (dir_inode->block[0] == 0) return false;
+
+    uint64_t byte_offset = (uint64_t)dir_inode->block[0] * block_size;
+    return ReadDiskBytes((uint32_t)byte_offset, block_size, out_buffer);
+}
+
+// Faza 1c: przeszukuje bufor z zawartoscia bloku katalogu (patrz ReadDirectoryFirstBlock)
+// w poszukiwaniu wpisu o podanej nazwie. `name` NIE jest zakonczone '\0' - porownujemy
+// dokladnie `name_len` bajtow, tak jak nazwy wpisow w samym obrazie.
+static bool FindEntryInBlock(const uint8_t* block_buf, uint32_t buf_len, const char* name, uint32_t name_len, uint32_t* out_inode) {
+    uint32_t offset = 0;
+    while (offset + sizeof(Ext2DirEntry) <= buf_len) {
+        const Ext2DirEntry* entry = (const Ext2DirEntry*)(block_buf + offset);
+        if (entry->rec_len < sizeof(Ext2DirEntry)) break; // uszkodzony/pusty blok - nie ma jak kontynuowac
+
+        if (entry->inode != 0 && entry->name_len == name_len) {
+            const char* entry_name = (const char*)(block_buf + offset + sizeof(Ext2DirEntry));
+            bool match = true;
+            for (uint32_t i = 0; i < name_len; i++) {
+                if (entry_name[i] != name[i]) { match = false; break; }
+            }
+            if (match) {
+                *out_inode = entry->inode;
+                return true;
+            }
+        }
+
+        offset += entry->rec_len;
+    }
+    return false;
+}
+
+// Faza 1c: rozwiazuje sciezke (np. "/usr/bin/HELLO.ELF") na numer i-wezla, zaczynajac
+// od i-wezla root (2). Kazdy czlon sciezki (oprocz ostatniego) musi byc katalogiem
+// zeby kontynuowac - sprawdzane przez odczyt jego i-wezla na poczatku kolejnej
+// iteracji. Analogiczne do FindDirectoryCluster/ResolveDirectoryCluster w fat32.cpp,
+// tylko ze operuje na i-wezlach zamiast klastrach FAT. Jeszcze NIE jest publicznym API
+// Ext2:: (prywatna, jak ReadInode) - skorzysta z niej dopiero Faza 1d (ListDirectory)
+// i 1e/1f (ReadFile).
+static bool ResolvePath(const char* path, uint32_t* out_inode_nr) {
+    if (path[0] == '\0' || (path[0] == '/' && path[1] == '\0')) {
+        *out_inode_nr = EXT2_ROOT_INODE;
+        return true;
+    }
+
+    uint32_t current_inode_nr = EXT2_ROOT_INODE;
+    int path_idx = (path[0] == '/') ? 1 : 0;
+
+    // Uwaga na przyszlosc (Faza 1d/1e+): ten bufor zyje na stosie wywolujacego. Dopoki
+    // ResolvePath jest wolane tylko z Init() (rozruch, duzy stos) jest to bezpieczne;
+    // gdyby w kolejnych fazach trafilo do wywolan syscalli na 8KiB stosie jadra per-task
+    // (patrz kernel/proc/sched.cpp), warto to zrewidowac (np. bufor statyczny pod locka).
+    uint8_t block_buf[EXT2_MAX_BLOCK_SIZE];
+
+    while (path[path_idx] != '\0') {
+        char segment[256];
+        uint32_t seg_len = 0;
+        while (path[path_idx] != '\0' && path[path_idx] != '/' && seg_len < sizeof(segment) - 1) {
+            segment[seg_len++] = path[path_idx++];
+        }
+        while (path[path_idx] == '/') path_idx++; // pochlania kolejne '/' (np. podwojny separator)
+
+        if (seg_len == 0) continue; // np. koncowy '/'
+
+        Ext2Inode dir_inode;
+        if (!ReadInode(current_inode_nr, &dir_inode)) return false;
+        if ((dir_inode.mode & EXT2_S_IFMT) != EXT2_S_IFDIR) return false;
+
+        if (!ReadDirectoryFirstBlock(&dir_inode, block_buf)) return false;
+
+        uint32_t found_inode = 0;
+        if (!FindEntryInBlock(block_buf, block_size, segment, seg_len, &found_inode)) return false;
+
+        current_inode_nr = found_inode;
+    }
+
+    *out_inode_nr = current_inode_nr;
+    return true;
 }
 
 void Ext2::Init() {
@@ -262,4 +364,18 @@ void Ext2::Init() {
     SerialPort::WriteString("Ext2: root inode block[0]="); print_uint32(root_inode.block[0]);
     SerialPort::WriteString(" block[1]="); print_uint32(root_inode.block[1]);
     SerialPort::WriteString("\n");
+
+    // Faza 1c: test ResolvePath na "/lost+found" - katalog ktory kazdy swiezy obraz
+    // mke2fs tworzy domyslnie w roocie, wiec (w przeciwienstwie do dowolnej nazwy pliku
+    // testowego wgranego reczne przez debugfs) ten test dziala na kazdym obrazie bez
+    // dodatkowego przygotowania. Do reczne porownania z
+    // `debugfs -R "stat <lost+found>" test.img` (ten sam numer i-wezla).
+    uint32_t lost_found_inode = 0;
+    if (ResolvePath("/lost+found", &lost_found_inode)) {
+        SerialPort::WriteString("Ext2: ResolvePath(/lost+found) -> inode=");
+        print_uint32(lost_found_inode);
+        SerialPort::WriteString("\n");
+    } else {
+        SerialPort::WriteString("Ext2: ResolvePath(/lost+found) failed.\n");
+    }
 }
