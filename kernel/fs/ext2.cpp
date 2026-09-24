@@ -274,6 +274,57 @@ static bool ResolvePath(const char* path, uint32_t* out_inode_nr) {
     return true;
 }
 
+// Faza 1d: pierwsza publiczna funkcja Ext2:: z prawdziwa implementacja poza Init().
+// Rozwiazuje `path` przez ResolvePath (Faza 1c), sprawdza ze to katalog, czyta jego
+// pierwszy blok (ReadDirectoryFirstBlock - to samo uproszczenie "tylko block[0]" co w
+// ResolvePath) i wypelnia out_entries pomijajac puste wpisy (inode == 0) oraz "."/".."
+// (analogicznie do FAT32::ListDirectory ktore pomija wpisy zaczynajace sie od '.',
+// patrz fat32.cpp:639). Wpis katalogowy ext2 ma tylko inode+file_type, wiec size i
+// attributes wymagaja dodatkowego ReadInode na kazdym znalezionym wpisie.
+int Ext2::ListDirectory(const char* path, DirEntry* out_entries, int max_entries) {
+    uint32_t dir_inode_nr = 0;
+    if (!ResolvePath(path, &dir_inode_nr)) {
+        SerialPort::WriteString("Ext2: ListDirectory - path not found.\n");
+        return 0;
+    }
+
+    Ext2Inode dir_inode;
+    if (!ReadInode(dir_inode_nr, &dir_inode)) return 0;
+    if ((dir_inode.mode & EXT2_S_IFMT) != EXT2_S_IFDIR) return 0;
+
+    uint8_t block_buf[EXT2_MAX_BLOCK_SIZE];
+    if (!ReadDirectoryFirstBlock(&dir_inode, block_buf)) return 0;
+
+    int count = 0;
+    uint32_t offset = 0;
+    while (offset + sizeof(Ext2DirEntry) <= block_size && count < max_entries) {
+        const Ext2DirEntry* entry = (const Ext2DirEntry*)(block_buf + offset);
+        if (entry->rec_len < sizeof(Ext2DirEntry)) break; // uszkodzony/pusty blok
+
+        const char* entry_name = (const char*)(block_buf + offset + sizeof(Ext2DirEntry));
+        bool is_dot_entry = entry->name_len > 0 && entry_name[0] == '.' &&
+                             (entry->name_len == 1 || (entry->name_len == 2 && entry_name[1] == '.'));
+
+        if (entry->inode != 0 && !is_dot_entry) {
+            Ext2Inode entry_inode;
+            if (ReadInode(entry->inode, &entry_inode)) {
+                DirEntry* de = &out_entries[count];
+                uint32_t name_len = entry->name_len;
+                if (name_len > FS_MAX_NAME - 1) name_len = FS_MAX_NAME - 1;
+                for (uint32_t i = 0; i < name_len; i++) de->name[i] = entry_name[i];
+                de->name[name_len] = '\0';
+                de->size = entry_inode.size;
+                de->attributes = ((entry_inode.mode & EXT2_S_IFMT) == EXT2_S_IFDIR) ? FS_ATTR_DIRECTORY : 0;
+                count++;
+            }
+        }
+
+        offset += entry->rec_len;
+    }
+
+    return count;
+}
+
 void Ext2::Init() {
     EnterCritical();
 
@@ -377,5 +428,20 @@ void Ext2::Init() {
         SerialPort::WriteString("\n");
     } else {
         SerialPort::WriteString("Ext2: ResolvePath(/lost+found) failed.\n");
+    }
+
+    // Faza 1d: test ListDirectory("/") - do reczne porownania z
+    // `debugfs -R "ls -l /" test.img` na hoscie (te same nazwy/rozmiary/atrybuty,
+    // bez "."/"..", weryfikacja Fazy 1d).
+    DirEntry root_entries[32];
+    int root_count = ListDirectory("/", root_entries, 32);
+    SerialPort::WriteString("Ext2: ListDirectory(/) -> "); print_uint32(root_count);
+    SerialPort::WriteString(" entries\n");
+    for (int i = 0; i < root_count; i++) {
+        SerialPort::WriteString("Ext2:   ");
+        SerialPort::WriteString(root_entries[i].name);
+        SerialPort::WriteString(root_entries[i].attributes & FS_ATTR_DIRECTORY ? " [DIR]" : " [FILE]");
+        SerialPort::WriteString(" size="); print_uint32(root_entries[i].size);
+        SerialPort::WriteString("\n");
     }
 }
