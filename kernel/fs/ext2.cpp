@@ -325,6 +325,74 @@ int Ext2::ListDirectory(const char* path, DirEntry* out_entries, int max_entries
     return count;
 }
 
+// Faza 1e: odczyt zawartosci pliku dla i-wezlow miesczacych sie w 12 blokach
+// bezposrednich (block[0..11]) - pliki wieksze (wymagajace bloku posredniego,
+// block[12]) sa jeszcze nieobslugiwane, to Faza 1f. Wzorowane na
+// FAT32::ReadFile (alokacja przez PMM, hhdm offset), ale zamiast lancucha
+// klastrow FAT iterujemy po tablicy block[] z i-wezla - kazdy wpis to numer
+// bloku ext2 wprost (nie ma odpowiednika FAT do przejscia).
+bool Ext2::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size) {
+    uint32_t inode_nr = 0;
+    if (!ResolvePath(path, &inode_nr)) {
+        SerialPort::WriteString("Ext2: ReadFile - path not found.\n");
+        return false;
+    }
+
+    Ext2Inode inode;
+    if (!ReadInode(inode_nr, &inode)) return false;
+    if ((inode.mode & EXT2_S_IFMT) != EXT2_S_IFREG) {
+        SerialPort::WriteString("Ext2: ReadFile - not a regular file.\n");
+        return false;
+    }
+
+    uint32_t size = inode.size;
+    if (size == 0 || block_size == 0) return false;
+
+    uint32_t blocks_needed = (size + block_size - 1) / block_size;
+    if (blocks_needed > 12) {
+        SerialPort::WriteString("Ext2: ReadFile - file needs indirect blocks (Faza 1f), not supported yet.\n");
+        return false;
+    }
+
+    uint32_t pages_needed = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    void* phys_ptr = PMM::AllocatePages(pages_needed);
+    if (!phys_ptr) return false;
+
+    uint8_t* v_ptr = (uint8_t*)((uint64_t)phys_ptr + hhdm_request.response->offset);
+
+    uint32_t bytes_read = 0;
+    for (uint32_t i = 0; i < blocks_needed; i++) {
+        if (inode.block[i] == 0) {
+            SerialPort::WriteString("Ext2: ReadFile - sparse hole in direct block, not supported yet.\n");
+            PMM::FreePages(phys_ptr, pages_needed);
+            return false;
+        }
+
+        uint32_t remaining = size - bytes_read;
+        uint32_t read_len = (remaining < block_size) ? remaining : block_size;
+        uint64_t byte_offset = (uint64_t)inode.block[i] * block_size;
+
+        if (!ReadDiskBytes((uint32_t)byte_offset, read_len, v_ptr + bytes_read)) {
+            PMM::FreePages(phys_ptr, pages_needed);
+            return false;
+        }
+        bytes_read += read_len;
+    }
+
+    *out_buffer = v_ptr;
+    *out_size = size;
+    return true;
+}
+
+// Faza 1e: analogicznie do FAT32::FreeFile - zamienia adres wirtualny (hhdm) z
+// powrotem na fizyczny i zwraca strony do PMM.
+void Ext2::FreeFile(uint8_t* buffer, uint32_t size) {
+    if (!buffer) return;
+    void* phys_ptr = (void*)((uint64_t)buffer - hhdm_request.response->offset);
+    uint32_t pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    PMM::FreePages(phys_ptr, pages);
+}
+
 void Ext2::Init() {
     EnterCritical();
 
@@ -443,5 +511,23 @@ void Ext2::Init() {
         SerialPort::WriteString(root_entries[i].attributes & FS_ATTR_DIRECTORY ? " [DIR]" : " [FILE]");
         SerialPort::WriteString(" size="); print_uint32(root_entries[i].size);
         SerialPort::WriteString("\n");
+    }
+
+    // Faza 1e: test ReadFile("/hello.txt") - plik testowy dopisywany recznie przez
+    // `debugfs -w` na obrazie mke2fs (patrz raport tej fazy), wiec na "gorym" obrazie
+    // bez tego kroku ResolvePath po prostu nie znajdzie sciezki i test zaloguje "not
+    // found" - bezpieczne, analogicznie do testu ResolvePath(/lost+found) w Fazie 1c
+    // gdy dysk slave w ogole nie jest podpiety. Do reczne porownania zawartosci z
+    // `debugfs -R "cat hello.txt" test.img` na hoscie.
+    uint8_t* file_buf = nullptr;
+    uint32_t file_size = 0;
+    if (ReadFile("/hello.txt", &file_buf, &file_size)) {
+        SerialPort::WriteString("Ext2: ReadFile(/hello.txt) -> "); print_uint32(file_size);
+        SerialPort::WriteString(" bytes: \"");
+        for (uint32_t i = 0; i < file_size; i++) SerialPort::WriteChar((char)file_buf[i]);
+        SerialPort::WriteString("\"\n");
+        FreeFile(file_buf, file_size);
+    } else {
+        SerialPort::WriteString("Ext2: ReadFile(/hello.txt) failed (expected on images without the test file).\n");
     }
 }
