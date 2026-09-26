@@ -1,17 +1,15 @@
 #include <gui.h>
+#include <widgets.h>
 #include <stddef.h>
 #include <stdbool.h>
 
-char display[32];
+Form form;
+Control* display_ctrl;
+
 int current_val = 0;
 int stored_val = 0;
 char current_op = 0;
 bool new_number = true;
-
-int win_id;
-uint32_t* fb;
-int win_w = 200;
-int win_h = 260;
 
 void IntToString(int val, char* str) {
     if (val == 0) {
@@ -41,168 +39,123 @@ void IntToString(int val, char* str) {
     }
 }
 
-void DrawAppButton(int x, int y, int w, int h, const char* text) {
-    gui_draw_rect(fb, win_w, x, y, w, h, 0x808080);
-    gui_draw_rect(fb, win_w, x, y, w, 2, 0xFFFFFF);
-    gui_draw_rect(fb, win_w, x, y, 2, h, 0xFFFFFF);
-    gui_draw_rect(fb, win_w, x + w - 2, y, 2, h, 0x000000);
-    gui_draw_rect(fb, win_w, x, y + h - 2, w, 2, 0x000000);
-    
+void RenderDisplay(Control* self, Form* f) {
+    gui_form_draw_rect(f, 10, 10, f->win_w - 20, 30, 0xFFFFFF);
+    gui_form_draw_rect(f, 9, 9, f->win_w - 18, 1, 0x000000);
+    gui_form_draw_rect(f, 9, 9, 1, 32, 0x000000);
+
     int len = 0;
-    while(text[len]) len++;
-    
-    int tx = x + (w - len * 8) / 2;
-    int ty = y + (h - 8) / 2;
-    gui_draw_string(fb, win_w, text, tx, ty, 0x000000, 0x808080);
+    while (self->text[len]) len++;
+    int text_x = f->win_w - 15 - (len * 8);
+    gui_form_draw_string(f, self->text, text_x, 17, 0x000000, 0xFFFFFF);
 }
 
-void PaintCalculator() {
-    int win_x = 0;
-    int win_y = 0;
-    
-    gui_draw_rect(fb, win_w, win_x, win_y, win_w, win_h, 0xC0C0C0);
-    
-    gui_draw_rect(fb, win_w, win_x + 10, win_y + 10, win_w - 20, 30, 0xFFFFFF);
-    gui_draw_rect(fb, win_w, win_x + 9, win_y + 9, win_w - 18, 1, 0x000000); 
-    gui_draw_rect(fb, win_w, win_x + 9, win_y + 9, 1, 32, 0x000000); 
-    
+void OnButtonClick(Control* self) {
+    char btn = self->text[0];
     int len = 0;
-    while(display[len]) len++;
-    int text_x = win_x + win_w - 15 - (len * 8); 
-    gui_draw_string(fb, win_w, display, text_x, win_y + 17, 0x000000, 0xFFFFFF);
-    
-    const char* buttons[16] = {
-        "7", "8", "9", "/",
-        "4", "5", "6", "*",
-        "1", "2", "3", "-",
-        "C", "0", "=", "+"
-    };
-    
-    int start_y = win_y + 50;
-    int bw = (win_w - 50) / 4;
-    int bh = 30;
-    
-    for (int i = 0; i < 16; i++) {
-        int row = i / 4;
-        int col = i % 4;
-        int bx = win_x + 10 + col * (bw + 10);
-        int by = start_y + row * (bh + 10);
-        
-        DrawAppButton(bx, by, bw, bh, buttons[i]);
-    }
-}
+    while (display_ctrl->text[len]) len++;
 
-void OnMouseClick(int local_x, int local_y) {
-    int bw = (win_w - 50) / 4;
-    int bh = 30;
-    
-    const char* buttons[16] = {
-        "7", "8", "9", "/",
-        "4", "5", "6", "*",
-        "1", "2", "3", "-",
-        "C", "0", "=", "+"
-    };
-    
-    int start_y = 50;
-    
-    for (int i = 0; i < 16; i++) {
-        int row = i / 4;
-        int col = i % 4;
-        int bx = 10 + col * (bw + 10);
-        int by = start_y + row * (bh + 10);
-        
-        if (local_x >= bx && local_x <= bx + bw && local_y >= by && local_y <= by + bh) {
-            char btn = buttons[i][0];
-            int len = 0;
-            while(display[len]) len++;
-            
-            if (btn >= '0' && btn <= '9') {
-                if (new_number) {
-                    display[0] = btn;
-                    display[1] = '\0';
-                    current_val = btn - '0';
-                    new_number = false;
-                } else {
-                    if (len < 21) {
-                        display[len] = btn;
-                        display[len+1] = '\0';
-                        current_val = current_val * 10 + (btn - '0');
-                    }
-                }
-            } else if (btn == 'C') {
-                display[0] = '0';
-                display[1] = '\0';
-                current_val = 0;
-                stored_val = 0;
-                current_op = 0;
-                new_number = true;
-            } else if (btn == '+' || btn == '-' || btn == '*' || btn == '/') {
-                if (current_op != 0 && !new_number) {
-                    if (current_op == '+') current_val = stored_val + current_val;
-                    else if (current_op == '-') current_val = stored_val - current_val;
-                    else if (current_op == '*') current_val = stored_val * current_val;
-                    else if (current_op == '/') {
-                        if (current_val == 0) {
-                            display[0] = 'E'; display[1] = 'R'; display[2] = 'R'; display[3] = '\0';
-                            new_number = true;
-                            current_op = 0;
-                            return;
-                        }
-                        else current_val = stored_val / current_val;
-                    }
-                }
-                stored_val = current_val;
-                current_op = btn;
-                new_number = true;
-                
-                IntToString(stored_val, display);
-                len = 0; while(display[len]) len++;
-                display[len] = btn;
-                display[len+1] = '\0';
-                
-            } else if (btn == '=') {
-                if (current_op != 0) {
-                    if (current_op == '+') current_val = stored_val + current_val;
-                    else if (current_op == '-') current_val = stored_val - current_val;
-                    else if (current_op == '*') current_val = stored_val * current_val;
-                    else if (current_op == '/') {
-                        if (current_val == 0) {
-                            display[0] = 'E'; display[1] = 'R'; display[2] = 'R'; display[3] = '\0';
-                            new_number = true;
-                            current_op = 0;
-                            return;
-                        }
-                        else current_val = stored_val / current_val;
-                    }
-                    current_op = 0;
-                    IntToString(current_val, display);
-                    new_number = true;
-                }
+    if (btn >= '0' && btn <= '9') {
+        if (new_number) {
+            display_ctrl->text[0] = btn;
+            display_ctrl->text[1] = '\0';
+            current_val = btn - '0';
+            new_number = false;
+        } else {
+            if (len < 21) {
+                display_ctrl->text[len] = btn;
+                display_ctrl->text[len + 1] = '\0';
+                current_val = current_val * 10 + (btn - '0');
             }
-            break;
+        }
+    } else if (btn == 'C') {
+        display_ctrl->text[0] = '0';
+        display_ctrl->text[1] = '\0';
+        current_val = 0;
+        stored_val = 0;
+        current_op = 0;
+        new_number = true;
+    } else if (btn == '+' || btn == '-' || btn == '*' || btn == '/') {
+        if (current_op != 0 && !new_number) {
+            if (current_op == '+') current_val = stored_val + current_val;
+            else if (current_op == '-') current_val = stored_val - current_val;
+            else if (current_op == '*') current_val = stored_val * current_val;
+            else if (current_op == '/') {
+                if (current_val == 0) {
+                    display_ctrl->text[0] = 'E'; display_ctrl->text[1] = 'R';
+                    display_ctrl->text[2] = 'R'; display_ctrl->text[3] = '\0';
+                    new_number = true;
+                    current_op = 0;
+                    return;
+                }
+                else current_val = stored_val / current_val;
+            }
+        }
+        stored_val = current_val;
+        current_op = btn;
+        new_number = true;
+
+        IntToString(stored_val, display_ctrl->text);
+        len = 0; while (display_ctrl->text[len]) len++;
+        display_ctrl->text[len] = btn;
+        display_ctrl->text[len + 1] = '\0';
+
+    } else if (btn == '=') {
+        if (current_op != 0) {
+            if (current_op == '+') current_val = stored_val + current_val;
+            else if (current_op == '-') current_val = stored_val - current_val;
+            else if (current_op == '*') current_val = stored_val * current_val;
+            else if (current_op == '/') {
+                if (current_val == 0) {
+                    display_ctrl->text[0] = 'E'; display_ctrl->text[1] = 'R';
+                    display_ctrl->text[2] = 'R'; display_ctrl->text[3] = '\0';
+                    new_number = true;
+                    current_op = 0;
+                    return;
+                }
+                else current_val = stored_val / current_val;
+            }
+            current_op = 0;
+            IntToString(current_val, display_ctrl->text);
+            new_number = true;
         }
     }
 }
 
 void _start() {
-    win_id = sys_create_window("Kalkulator", win_w, win_h, 100, 100, &fb);
+    uint32_t* fb;
+    int win_w = 200;
+    int win_h = 260;
+
+    int win_id = sys_create_window("Kalkulator", win_w, win_h, 100, 100, &fb);
     if (win_id < 0 || !fb) sys_exit();
-    
-    display[0] = '0';
-    display[1] = '\0';
-    
-    PaintCalculator();
-    sys_update_window(win_id);
-    
-    struct WindowEvent ev;
-    while (1) {
-        if (sys_get_event(win_id, &ev)) {
-            if (ev.type == 1) { // Mouse click
-                OnMouseClick(ev.x, ev.y);
-                PaintCalculator();
-                sys_update_window(win_id);
-            }
-        }
-        for (volatile int i = 0; i < 10000; i++);
+
+    gui_form_init(&form, win_id, fb, win_w, win_h, 0xC0C0C0);
+
+    display_ctrl = gui_form_add_control(&form, 10, 10, win_w - 20, 30, "0", RenderDisplay, NULL, NULL);
+
+    const char* buttons[16] = {
+        "7", "8", "9", "/",
+        "4", "5", "6", "*",
+        "1", "2", "3", "-",
+        "C", "0", "=", "+"
+    };
+
+    int start_y = 50;
+    int bw = (win_w - 50) / 4;
+    int bh = 30;
+
+    for (int i = 0; i < 16; i++) {
+        int row = i / 4;
+        int col = i % 4;
+        int bx = 10 + col * (bw + 10);
+        int by = start_y + row * (bh + 10);
+
+        gui_form_add_button(&form, bx, by, bw, bh, buttons[i], OnButtonClick, NULL);
     }
+
+    gui_form_paint(&form);
+    sys_update_window(win_id);
+
+    gui_form_run(&form);
 }
