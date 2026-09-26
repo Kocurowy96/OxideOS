@@ -7,6 +7,7 @@ typedef struct Form Form;
 typedef void (*ControlRenderFn)(Control* self, Form* form);
 typedef void (*ControlClickFn)(Control* self);
 typedef void (*FormTickFn)(Form* form);
+typedef void (*FormKeyFn)(Form* form, char key);
 
 struct Control {
     int x, y, w, h;
@@ -16,7 +17,9 @@ struct Control {
     void* user_data;          // wskaznik do stanu apki
 };
 
-#define FORM_MAX_CONTROLS 32
+// 32 wystarczalo Kalkulatorowi/WinVer/Ustawieniom, ale siatka dni Kalendarza (do 31 komorek)
+// plus stale kontrolki naglowka/planera przekracza to - podniesione do 40 (Faza 3).
+#define FORM_MAX_CONTROLS 40
 
 struct Form {
     int win_id;
@@ -31,6 +34,10 @@ struct Form {
     int active_tab;      // aktualnie wybrana zakladka dla kontrolek dodanych przez gui_form_add_tab -
                          // apka sama go ustawia (np. w on_click zakladki), kontrolki inne niz zakladki
                          // go ignoruja.
+    FormKeyFn on_key;    // wolane przez gui_form_run przy GUI_EVENT_KEY_PRESS, moze byc NULL (domyslnie
+                         // po gui_form_init) - apka sama zarzadza swoim tekstem/kursorem, biblioteka nie
+                         // ma jeszcze wlasnej kontrolki pola tekstowego (patrz PLAN_ui_library.md, do
+                         // zaprojektowania osobno przy Notatniku).
 };
 
 void gui_form_init(Form* form, int win_id, uint32_t* fb, int win_w, int win_h, uint32_t bg_color);

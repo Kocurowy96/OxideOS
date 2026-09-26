@@ -74,6 +74,7 @@ void gui_form_init(Form* form, int win_id, uint32_t* fb, int win_w, int win_h, u
     form->control_count = 0;
     form->on_tick = NULL;
     form->active_tab = 0;
+    form->on_key = NULL;
 }
 
 Control* gui_form_add_control(Form* form, int x, int y, int w, int h, const char* text,
@@ -134,6 +135,10 @@ void gui_form_run(Form* form) {
                         break;
                     }
                 }
+                gui_form_paint(form);
+                sys_update_window(form->win_id);
+            } else if (ev.type == GUI_EVENT_KEY_PRESS) {
+                if (form->on_key) form->on_key(form, ev.key);
                 gui_form_paint(form);
                 sys_update_window(form->win_id);
             } else if (ev.type == GUI_EVENT_CLOSE) {
