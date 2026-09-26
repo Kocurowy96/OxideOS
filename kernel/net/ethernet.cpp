@@ -1,9 +1,11 @@
 #include "ethernet.h"
 #include "arp.h"
+#include "ip.h"
 #include "../drivers/rtl8139.h"
 #include "../serial.h"
 
-#define ETHERTYPE_ARP 0x0806
+#define ETHERTYPE_ARP  0x0806
+#define ETHERTYPE_IPV4 0x0800
 
 struct EthernetHeader {
     uint8_t dst[6];
@@ -43,7 +45,9 @@ void Ethernet::HandleFrame(const uint8_t* frame, uint16_t frame_len) {
 
     if (ethertype == ETHERTYPE_ARP) {
         ARP::HandleFrame(payload, payload_len);
+    } else if (ethertype == ETHERTYPE_IPV4) {
+        IP::HandleFrame(payload, payload_len);
     }
-    // Inne EtherType (m.in. IPv4/0x0800 - Faza 4) na razie ciche - surowy naglowek kazdej
-    // ramki i tak jest juz logowany przez RTL8139::ReadOnePacket (Faza 2b).
+    // Inne EtherType na razie ciche - surowy naglowek kazdej ramki i tak jest juz logowany
+    // przez RTL8139::ReadOnePacket (Faza 2b).
 }

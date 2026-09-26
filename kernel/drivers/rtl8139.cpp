@@ -57,8 +57,15 @@ static uint8_t irq_line = 0;
 static void* rx_buffer_phys = nullptr;
 static uint8_t* rx_buffer_virt = nullptr;
 static uint16_t rx_read_offset = 0; // pozycja odczytu w pierscieniu, sledzona przez sterownik
-static void* tx_buffer_phys = nullptr;
-static uint8_t* tx_buffer_virt = nullptr;
+// 4 oddzielne bufory/deskryptory TX (rotacja miedzy nimi) - patrz uzasadnienie przy
+// RTL8139::Send: powtorne uzycie TEGO SAMEGO deskryptora zaraz po jego wlasnym zakonczeniu
+// prowadzilo do TX timeout (zaobserwowane empirycznie, przyczyna sprzetowa niejasna do
+// konca, ale rotacja miedzy 4 deskryptorami/buforami to standardowe, dzialajace podejscie
+// i jest tym co ta karta i tak udostepnia z zalozenia).
+#define TX_DESC_COUNT 4
+static void* tx_buffer_phys[TX_DESC_COUNT] = {};
+static uint8_t* tx_buffer_virt[TX_DESC_COUNT] = {};
+static int tx_next_desc = 0;
 
 static void WriteHexByte(uint8_t val) {
     static const char hex[] = "0123456789ABCDEF";
@@ -149,24 +156,32 @@ void RTL8139::HandleInterrupt() {
     }
 }
 
-// Faza 2a: zawsze uzywamy deskryptora 0 - wysylanie jest w pelni synchroniczne (czekamy na
-// TOK zanim wrocimy), wiec nie ma potrzeby rotowac miedzy 4 dostepnymi deskryptorami/buforami
-// (przydaloby sie dopiero przy asynchronicznym/potokowym wysylaniu wielu ramek na raz).
+// Faza 2a/4: rotacja miedzy 4 deskryptorami/buforami TX - patrz komentarz przy
+// tx_buffer_phys/tx_buffer_virt wyzej. Nadal w pelni synchroniczne (czekamy na TOK
+// zanim wrocimy), rotacja jest tu wylacznie zeby unikac powtornego uzycia tego samego
+// deskryptora zaraz po jego wlasnym zakonczeniu, nie zeby wysylac wiele ramek na raz.
 bool RTL8139::Send(const uint8_t* data, uint16_t len) {
-    if (!present || !tx_buffer_virt) return false;
+    if (!present) return false;
     if (len > TX_BUFFER_SIZE) return false;
+
+    int desc = tx_next_desc;
+    tx_next_desc = (tx_next_desc + 1) % TX_DESC_COUNT;
+    if (!tx_buffer_virt[desc]) return false;
 
     // Minimalna dlugosc ramki Ethernet (bez FCS, ktore i tak dolicza sama karta) to 60B -
     // krotsze ramki trzeba dopelnic zerami.
     uint16_t padded_len = len < 60 ? 60 : len;
-    for (uint16_t i = 0; i < len; i++) tx_buffer_virt[i] = data[i];
-    for (uint16_t i = len; i < padded_len; i++) tx_buffer_virt[i] = 0;
+    for (uint16_t i = 0; i < len; i++) tx_buffer_virt[desc][i] = data[i];
+    for (uint16_t i = len; i < padded_len; i++) tx_buffer_virt[desc][i] = 0;
 
-    outl(io_base + RTL_REG_TSAD0, (uint32_t)(uint64_t)tx_buffer_phys);
-    outl(io_base + RTL_REG_TSD0, padded_len); // zapis dlugosci startuje transmisje
+    uint16_t tsad = (uint16_t)(RTL_REG_TSAD0 + desc * 4);
+    uint16_t tsd = (uint16_t)(RTL_REG_TSD0 + desc * 4);
+
+    outl(io_base + tsad, (uint32_t)(uint64_t)tx_buffer_phys[desc]);
+    outl(io_base + tsd, padded_len); // zapis dlugosci startuje transmisje
 
     uint32_t spins = 0;
-    while (!(inl(io_base + RTL_REG_TSD0) & RTL_TSD_TOK)) {
+    while (!(inl(io_base + tsd) & RTL_TSD_TOK)) {
         if (++spins > 1000000) {
             SerialPort::WriteString("RTL8139: TX timeout.\n");
             return false;
@@ -250,13 +265,16 @@ void RTL8139::Init() {
     WriteDecimal(irq_line);
     SerialPort::WriteString(".\n");
 
-    // Faza 2a: bufor TX (1 strona wystarcza - max standardowa ramka to 1514B).
-    tx_buffer_phys = PMM::AllocatePages(1);
-    if (!tx_buffer_phys) {
-        SerialPort::WriteString("RTL8139: Failed to allocate TX buffer.\n");
-        return;
+    // Faza 2a/4: 4 osobne bufory TX, jeden na deskryptor (1 strona kazdy wystarcza - max
+    // standardowa ramka to 1514B).
+    for (int i = 0; i < TX_DESC_COUNT; i++) {
+        tx_buffer_phys[i] = PMM::AllocatePages(1);
+        if (!tx_buffer_phys[i]) {
+            SerialPort::WriteString("RTL8139: Failed to allocate TX buffer.\n");
+            return;
+        }
+        tx_buffer_virt[i] = (uint8_t*)((uint64_t)tx_buffer_phys[i] + hhdm_request.response->offset);
     }
-    tx_buffer_virt = (uint8_t*)((uint64_t)tx_buffer_phys + hhdm_request.response->offset);
 
     present = true;
 }

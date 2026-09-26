@@ -87,35 +87,35 @@ abstrakcji, ale liczba miejsc do zsynchronizowania rośnie z każdym nowym urzą
     (linia odczytana z PCI config w runtime, nie stała) — zweryfikowane przez monitor QEMU
     (`info pci` + bezpośredni odczyt rejestru CR portem I/O).
 
-**Faza 2 — surowe ramki Ethernet (TX/RX, bez interpretacji wyżej):**
+**Faza 2 — surowe ramki Ethernet (TX/RX, bez interpretacji wyżej). ZROBIONE 2026-09-26/27.**
 2a. Zrobione. TX pojedynczej, ręcznie złożonej ramki testowej (broadcast, EtherType 0x88B5)
     przez deskryptor TX0 (TSAD0/TSD0). Zweryfikowane: `tcpdump -r net_dump.pcap` pokazuje
     ramkę identyczną bajt-po-bajcie (adresy MAC, EtherType, payload, dopełnienie do 60B).
-2b. RX — obsługa przerwania odbioru (`RTL_ISR_ROK`), odczyt nagłówka pakietu z bufora
-    cyklicznego (2B status + 2B długość WŁĄCZNIE z 4B CRC, potem dane), aktualizacja CAPR
-    (uwaga: klasyczny hardware quirk RTL8139 — CAPR musi być ustawiony 16 bajtów PRZED
-    faktyczną pozycją odczytu, udokumentowane w OSDev Wiki, do zweryfikowania ostrożnie przy
-    implementacji, nie zgadywać). Log surowych bajtów nagłówka Ethernet (adresy MAC +
-    EtherType) każdej odebranej ramki. Weryfikacja: uruchomić OxideOS z Fazy 3's własnym ARP
-    request do bramy (patrz niżej) i sprawdzić że odebrana odpowiedź ARP jest poprawnie
-    zalogowana, porównana z `tcpdump` — w praktyce 2b i 3 warto rozwijać razem/naprzemiennie,
-    bo sam gołe RX bez czegokolwiek co generuje ruch DO nas trudno przetestować w izolacji
-    (nikt nie zagada do karty, która nic jeszcze nie ogłasza przez ARP).
+    **UWAGA znaleziona dopiero w Fazie 4:** zawsze-TX0 działa dla POJEDYNCZEJ transmisji, ale
+    powtórne użycie TEGO SAMEGO deskryptora zaraz po jego własnym zakończeniu kończyło się
+    TX timeout — poprawione rotacją między 4 deskryptorami/buforami, patrz Faza 4 niżej.
+2b. Zrobione. RX — obsługa przerwania odbioru (`RTL_ISR_ROK`), odczyt nagłówka pakietu z
+    bufora cyklicznego (2B status + 2B długość WŁĄCZNIE z 4B CRC, potem dane), aktualizacja
+    CAPR (potwierdzony hardware quirk RTL8139: CAPR = pozycja odczytu MINUS 16, nie wprost).
+    Zweryfikowane przez `hostfwd`+`curl` wymuszające realny ruch przychodzący (ARP request od
+    SLIRP), porównane z `tcpdump` — identyczne.
 
-**Faza 3 — ARP:** wysłanie własnego ARP request do bramy (`10.0.2.2`) i sparsowanie
-odpowiedzi — potrzebne żeby w ogóle wysłać cokolwiek poza segment (znać MAC bramy). Odbiór
-ARP request (kto ma `10.0.2.15`?) i wysłanie ARP reply z naszym MAC — dopiero jeśli faktycznie
-ktoś o to zapyta (w praktyce: nikt nie zapyta dopóki nic z zewnątrz nie próbuje connectować do
-`10.0.2.15`, co przy `-netdev user` bez `hostfwd` się nie zdarza — patrz korekta w "Kluczowe
-decyzje" wyżej; ARP reply do zaimplementowania mimo to, dla kompletności/przyszłego hostfwd).
-Prosta tablica ARP (statyczna, mały rozmiar, bez wygasania na start).
+**Faza 3 — ARP. ZROBIONE 2026-09-26/27.** Nowy katalog `kernel/net/` (ethernet.h/cpp,
+arp.h/cpp). Wysłanie własnego ARP request do bramy + parsowanie odpowiedzi, prosta statyczna
+tablica ARP (8 wpisów, "gratuitous learning"), odpowiedź na cudzy request do naszego adresu.
+Zweryfikowane w pełni autonomicznie (bez `hostfwd`) — `tcpdump` potwierdza request/reply
+identyczne z logiem kernela.
 
 **Faza 4 — IP + ICMP (KAMIEŃ MILOWY, kierunek odwrócony — patrz korekta w "Kluczowe
-decyzje"):** budowa/parsowanie nagłówka IPv4 (bez fragmentacji na start, suma kontrolna),
-ICMP echo request/reply. Weryfikacja: OxideOS wysyła ICMP echo request do `10.0.2.2` (brama
-libslirp, odpowiada z założenia) i/albo `8.8.8.8` (realny host w internecie, NAT), loguje
-odebraną odpowiedź (adres/TTL/czas) — potwierdzone też przez `tcpdump -r net_dump.pcap`
-pokazujący realną wymianę request/reply.
+decyzje"). OSIĄGNIĘTA 2026-09-26/27.** `kernel/net/ip.h/cpp` + `icmp.h/cpp` — budowa/
+parsowanie nagłówka IPv4 (bez fragmentacji, suma kontrolna RFC 1071), ICMP echo request/
+reply. **Po drodze znaleziony i naprawiony realny bug z Fazy 2a:** zawsze-TX0 nie nadawał
+się do WIĘCEJ NIŻ jednej transmisji pod rząd (drugie użycie tego samego deskryptora →
+TX timeout, odtworzone syntetycznie wysyłając ten sam ARP dwukrotnie) — naprawione rotacją
+między 4 deskryptorami/buforami TX. Zweryfikowane: OxideOS wysyła ICMP echo request do
+`10.0.2.2`, dostaje prawdziwy echo reply, w pełni autonomicznie (bez `hostfwd`) —
+`tcpdump -r net_dump.pcap -v` potwierdza dokładnie zgodną wymianę request/reply
+(id/seq/długość). Checkpoint przed Fazą 6 — patrz niżej.
 
 **Faza 5 — UDP:** nagłówek UDP + prosty test. Ponieważ `ping`-podobny test "OxideOS łączy się
 NA ZEWNĄTRZ" nie sprawdza się dobrze dla UDP (brak prostego, zawsze-dostępnego usługowego
