@@ -790,8 +790,98 @@ bool Ext2::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size) 
     return true;
 }
 
-// Faza 2c: WriteFile dla NOWEGO pliku (plik juz istniejacy pod ta nazwa - Faza 2d,
-// na razie jawnie odrzucane, nie nadpisywane). Kolejnosc krokow celowa - najpierw
+// Faza 2d: nadpisuje ISTNIEJACY plik (wolane z Ext2::WriteFile ponizej, gdy w
+// katalogu-rodzicu juz jest wpis o tej nazwie) - zmienia wylacznie i-wezel (tresc,
+// rozmiar, ew. liste blokow bezposrednich), wpis katalogowy (ta sama nazwa, ten sam
+// numer i-wezla) zostaje bez zmian, w przeciwienstwie do WriteFile dla nowego pliku.
+// Tak jak Faza 2c: tylko pliki miesczace sie w 12 blokach bezposrednich, przed I po
+// zmianie rozmiaru - zaden plik ktory kiedykolwiek sami utworzylismy (Faza 2c nie
+// tworzy plikow > 12 blokow) nie powinien tego progu przekraczac w praktyce (m.in.
+// /notatka.txt z Notatnika, jedyny dzis realny uzytkownik tej sciezki, jest daleko
+// ponizej limitu).
+//
+// Kolejnosc krokow WAZNA dla spojnosci na wypadek awarii w polowie: bloki ktore
+// wypadaja z pliku (skracanie) sa zwalniane (FreeBlock) DOPIERO PO udanym zapisie
+// zaktualizowanego i-wezla (ktory juz ich nie wymienia) - nie wczesniej. Odwrotna
+// kolejnosc (najpierw FreeBlock, potem WriteInode) zostawilaby, w razie awarii
+// pomiedzy tymi krokami, i-wezel dalej wskazujacy na blok ktory bitmapa juz oznaczyla
+// jako wolny - dokladnie ten typ niespojnosci ktory `e2fsck` zglasza jako "Block
+// bitmap differences" (blok oznaczony jako wolny, a jednak w uzyciu). Nowo
+// zaalokowane bloki (powiekszanie) sa analogicznie odwolywane (FreeBlock) jesli
+// cokolwiek pozniej w tej samej operacji zawiedzie, zanim i-wezel zdazyl je przejac.
+static bool OverwriteExistingFile(uint32_t inode_nr, const uint8_t* buffer, uint32_t size) {
+    Ext2Inode inode;
+    if (!ReadInode(inode_nr, &inode)) return false;
+    if ((inode.mode & EXT2_S_IFMT) != EXT2_S_IFREG) {
+        SerialPort::WriteString("Ext2: WriteFile - existing entry is not a regular file.\n");
+        return false;
+    }
+
+    uint32_t old_blocks_needed = (inode.size + block_size - 1) / block_size;
+    uint32_t new_blocks_needed = (size + block_size - 1) / block_size;
+    if (old_blocks_needed > 12 || new_blocks_needed > 12) {
+        SerialPort::WriteString("Ext2: WriteFile - overwrite needs indirect blocks, not supported yet.\n");
+        return false;
+    }
+
+    uint32_t freed_blocks[12];
+    uint32_t freed_count = 0;
+
+    if (new_blocks_needed < old_blocks_needed) {
+        for (uint32_t i = new_blocks_needed; i < old_blocks_needed; i++) {
+            freed_blocks[freed_count++] = inode.block[i];
+            inode.block[i] = 0;
+        }
+    } else if (new_blocks_needed > old_blocks_needed) {
+        for (uint32_t i = old_blocks_needed; i < new_blocks_needed; i++) {
+            uint32_t new_block = 0;
+            if (!AllocateBlock(&new_block)) {
+                for (uint32_t j = old_blocks_needed; j < i; j++) FreeBlock(inode.block[j]);
+                SerialPort::WriteString("Ext2: WriteFile - no free blocks for growth.\n");
+                return false;
+            }
+            inode.block[i] = new_block;
+        }
+    }
+
+    uint32_t bytes_written = 0;
+    for (uint32_t i = 0; i < new_blocks_needed; i++) {
+        uint32_t chunk = block_size;
+        if (size - bytes_written < block_size) chunk = size - bytes_written;
+        uint64_t byte_offset = (uint64_t)inode.block[i] * block_size;
+        if (!WriteDiskBytes((uint32_t)byte_offset, chunk, buffer + bytes_written)) {
+            SerialPort::WriteString("Ext2: WriteFile - disk write failed while overwriting data blocks.\n");
+            if (new_blocks_needed > old_blocks_needed) {
+                for (uint32_t j = old_blocks_needed; j < new_blocks_needed; j++) FreeBlock(inode.block[j]);
+            }
+            return false;
+        }
+        bytes_written += chunk;
+    }
+
+    inode.size = size;
+    inode.blocks = new_blocks_needed * (block_size / 512);
+
+    if (!WriteInode(inode_nr, &inode)) {
+        SerialPort::WriteString("Ext2: WriteFile - failed to write updated inode.\n");
+        if (new_blocks_needed > old_blocks_needed) {
+            for (uint32_t j = old_blocks_needed; j < new_blocks_needed; j++) FreeBlock(inode.block[j]);
+        }
+        return false;
+    }
+
+    // Dopiero teraz, po udanym zapisie i-wezla ktory juz NIE wymienia tych blokow,
+    // wracaja one do bitmapy wolnych blokow (patrz uzasadnienie kolejnosci wyzej).
+    for (uint32_t i = 0; i < freed_count; i++) FreeBlock(freed_blocks[i]);
+
+    SerialPort::WriteString("Ext2: File overwritten successfully.\n");
+    return true;
+}
+
+// Faza 2c/2d: WriteFile dla nowego LUB juz istniejacego pliku - jesli w katalogu-
+// rodzicu jest juz wpis o tej nazwie, cala robote przejmuje OverwriteExistingFile
+// (Faza 2d, wyzej) i zwraca sie od razu; ponizej zostaje wylacznie sciezka tworzenia
+// NOWEGO pliku (Faza 2c). Kolejnosc krokow dla nowego pliku celowa - najpierw
 // alokujemy i wypelniamy WSZYSTKO (i-wezel, bloki danych, sama tresc i-wezla), a
 // dopiero na koncu dopisujemy wpis katalogowy widoczny z zewnatrz. Dzieki temu jesli
 // cos zawiedzie w trakcie, katalog nigdy nie wskazuje na niekompletny/czesciowo
@@ -832,8 +922,7 @@ bool Ext2::WriteFile(const char* path, const uint8_t* buffer, uint32_t size) {
 
     uint32_t existing_inode = 0;
     if (FindEntryInBlock(block_buf, block_size, filename, name_len, &existing_inode)) {
-        SerialPort::WriteString("Ext2: WriteFile - file already exists, overwrite not supported yet (Faza 2d).\n");
-        return false;
+        return OverwriteExistingFile(existing_inode, buffer, size);
     }
 
     uint32_t blocks_needed = (size + block_size - 1) / block_size;

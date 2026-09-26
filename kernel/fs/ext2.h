@@ -13,14 +13,19 @@
 // (AllocateBlock/FreeBlock), (Faza 2b) analogiczna bitmapa wolnych i-wezlow
 // (AllocateInode/FreeInode), (Faza 2c) WriteFile dziala dla NOWEGO pliku (alokacja
 // i-wezla+blokow bezposrednich, zapis danych, nowy wpis katalogowy w pierwszym
-// bloku katalogu-rodzica) - nadpisanie istniejacego pliku pod ta sama nazwa jest
-// jawnie odrzucane (Faza 2d). Odczyt i-wezla (Ext2Inode/ReadInode) i rozwiazywanie
-// sciezek (ResolvePath, parser wpisow katalogowych) zyja na razie tylko w ext2.cpp.
-// Sterownik NIE jest jeszcze podlaczony do VFS:: - disk.img zostaje FAT32-owy,
-// testujemy na osobnym obrazie mke2fs podlaczonym jako drugi dysk QEMU (patrz
-// ext2.cpp). Uwaga: kernel/proc/sched.cpp - per-task kernel stack zwiekszony z 2 na
-// 8 stron przy okazji tej fazy (WriteFile+ResolvePath razem trzymaja na stosie
-// wiecej niz stary budzet 8KiB pozwalal), patrz komentarz tam.
+// bloku katalogu-rodzica), (Faza 2d) WriteFile dziala tez dla JUZ ISTNIEJACEGO
+// pliku (OverwriteExistingFile - powieksza/skraca liste blokow bezposrednich i
+// aktualizuje size, wpis katalogowy sie nie zmienia). Cala Faza 2 (odczyt+zapis)
+// jest teraz kompletna dla plikow miesczacych sie w 12 blokach bezposrednich -
+// wieksze pliki (wymagajace bloku posredniego przy zapisie) nadal odrzucane, tak
+// jak podwojnie/potrojnie posrednie przy odczycie. Odczyt i-wezla (Ext2Inode/
+// ReadInode) i rozwiazywanie sciezek (ResolvePath, parser wpisow katalogowych) zyja
+// na razie tylko w ext2.cpp. Sterownik NIE jest jeszcze podlaczony do VFS:: -
+// disk.img zostaje FAT32-owy, testujemy na osobnym obrazie mke2fs podlaczonym jako
+// drugi dysk QEMU (patrz ext2.cpp) - integracja to Faza 3. Uwaga: kernel/proc/
+// sched.cpp - per-task kernel stack zwiekszony z 2 na 8 stron przy okazji Fazy 2c
+// (WriteFile+ResolvePath razem trzymaja na stosie wiecej niz stary budzet 8KiB
+// pozwalal), patrz komentarz tam.
 class Ext2 {
 public:
     static void Init();
