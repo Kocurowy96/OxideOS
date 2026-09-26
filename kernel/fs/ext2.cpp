@@ -114,6 +114,8 @@ static Ext2Superblock superblock;
 static uint32_t block_size = 0;
 static uint32_t block_groups_count = 0;
 static Ext2GroupDesc* group_desc_table = nullptr;
+static uint32_t bgdt_block = 0; // Faza 2a: zapamietane z Init(), potrzebne zeby zapisac
+                                // pojedynczy Ext2GroupDesc z powrotem po alokacji/zwolnieniu.
 
 static void print_uint32(uint32_t val) {
     char buf[12] = {0};
@@ -161,6 +163,160 @@ static bool ReadDiskBytes(uint32_t byte_offset, uint32_t length, uint8_t* out) {
         lba++;
     }
     return true;
+}
+
+// Faza 2a: analogicznie do ReadDiskSector - w Fazie 3b zamieni sie na ATA::WriteSectors
+// (primary master), na razie pisze na osobny obraz testowy podpiety jako -hdb.
+static bool WriteDiskSector(uint32_t lba, const uint8_t* buffer) {
+    return ATA::WriteSectorSlave(lba, buffer);
+}
+
+// Odpowiednik ReadDiskBytes dla zapisu. Pelny sektor pisany jest wprost z `data`;
+// czesciowy (pierwszy/ostatni sektor zakresu, jesli byte_offset/length nie sa
+// wyrownane do 512) wymaga odczytu-modyfikacji-zapisu, zeby nie nadpisac bajtow
+// sasiadujacych w tym samym sektorze spoza zakresu `[byte_offset, byte_offset+length)`.
+static bool WriteDiskBytes(uint32_t byte_offset, uint32_t length, const uint8_t* data) {
+    uint32_t lba = byte_offset / 512;
+    uint32_t sector_off = byte_offset % 512;
+    uint32_t written = 0;
+    uint8_t sector[512];
+
+    while (written < length) {
+        uint32_t copy_len = 512 - sector_off;
+        if (copy_len > length - written) copy_len = length - written;
+
+        if (copy_len == 512) {
+            if (!WriteDiskSector(lba, data + written)) return false;
+        } else {
+            if (!ReadDiskSector(lba, sector)) return false;
+            for (uint32_t i = 0; i < copy_len; i++) sector[sector_off + i] = data[written + i];
+            if (!WriteDiskSector(lba, sector)) return false;
+        }
+
+        written += copy_len;
+        sector_off = 0;
+        lba++;
+    }
+    return true;
+}
+
+// Faza 2a: zapisuje z powrotem jeden wpis tablicy deskryptorow grup (po zmianie
+// free_blocks_count przy alokacji/zwolnieniu bloku) pod jego pozycja w BGDT na dysku.
+// Uwaga (swiadome uproszczenie, zgodnie z PLAN_ext2_filesystem.md - brak obslugi
+// kopii zapasowych): aktualizujemy tylko podstawowa kopie BGDT/superbloku (grupa 0
+// wzgledem bloku first_data_block+1). Prawdziwy ext2 trzyma kopie zapasowe w
+// niektorych grupach (sparse_super), ale wszystkie obrazy testowe i produkcyjny
+// disk.img (64MB, jeden blok_group przy domyslnym mke2fs) maja dzis dokladnie jedna
+// grupe, wiec kopii zapasowych po prostu nie ma - nie ma nic do synchronizacji.
+static bool WriteBackGroupDesc(uint32_t group) {
+    uint64_t offset = (uint64_t)bgdt_block * block_size + (uint64_t)group * sizeof(Ext2GroupDesc);
+    return WriteDiskBytes((uint32_t)offset, sizeof(Ext2GroupDesc), (const uint8_t*)&group_desc_table[group]);
+}
+
+static bool WriteBackSuperblock() {
+    return WriteDiskBytes(EXT2_SUPERBLOCK_OFFSET, sizeof(Ext2Superblock), (const uint8_t*)&superblock);
+}
+
+// Faza 2a: bitmapa wolnych blokow danych, bit-per-blok (1 = zajety), jedna na grupe
+// (group_desc_table[grupa].block_bitmap wskazuje numer bloku bitmapy). Szuka pierwszego
+// zerowego bitu przechodzac po grupach w kolejnosci (pomijajac grupy z free_blocks_count
+// == 0 - czysta optymalizacja, nie trzeba wtedy w ogole czytac ich bitmapy), ustawia go
+// na 1, aktualizuje liczniki free_blocks_count w grupie i w superbloku, zapisuje obie
+// zmiany na dysk (WriteBackGroupDesc/WriteBackSuperblock) razem z sama bitmapa - jesli
+// ktorykolwiek z tych zapisow zawiedzie, zwraca false, ale bitmapa i liczniki w pamieci
+// (group_desc_table/superblock) zostaja juz zmienione, wiec kolejna alokacja nie
+// przydzieli tego samego bloku ponownie (bezpieczne w gorsza strone - zgubiony wolny
+// blok, nie podwojna alokacja).
+static bool AllocateBlock(uint32_t* out_block_num) {
+    if (block_size == 0 || block_size > EXT2_MAX_BLOCK_SIZE || group_desc_table == nullptr) return false;
+
+    EnterCritical();
+
+    uint8_t bitmap[EXT2_MAX_BLOCK_SIZE];
+    for (uint32_t group = 0; group < block_groups_count; group++) {
+        if (group_desc_table[group].free_blocks_count == 0) continue;
+
+        uint32_t group_start_block = superblock.first_data_block + group * superblock.blocks_per_group;
+        uint32_t blocks_in_group = superblock.blocks_per_group;
+        if (group == block_groups_count - 1) {
+            uint32_t remaining = superblock.blocks_count - group_start_block;
+            if (remaining < blocks_in_group) blocks_in_group = remaining;
+        }
+
+        uint64_t bitmap_offset = (uint64_t)group_desc_table[group].block_bitmap * block_size;
+        if (!ReadDiskBytes((uint32_t)bitmap_offset, block_size, bitmap)) {
+            ExitCritical();
+            return false;
+        }
+
+        for (uint32_t bit = 0; bit < blocks_in_group; bit++) {
+            uint32_t byte_idx = bit / 8;
+            uint8_t mask = (uint8_t)(1 << (bit % 8));
+            if (bitmap[byte_idx] & mask) continue; // zajety
+
+            bitmap[byte_idx] |= mask;
+            if (!WriteDiskBytes((uint32_t)bitmap_offset, block_size, bitmap)) {
+                ExitCritical();
+                return false;
+            }
+
+            group_desc_table[group].free_blocks_count--;
+            superblock.free_blocks_count--;
+            bool ok = WriteBackGroupDesc(group) && WriteBackSuperblock();
+            ExitCritical();
+            if (!ok) return false;
+
+            *out_block_num = group_start_block + bit;
+            return true;
+        }
+    }
+
+    ExitCritical();
+    SerialPort::WriteString("Ext2: AllocateBlock - no free blocks.\n");
+    return false;
+}
+
+// Faza 2a: odwrotnosc AllocateBlock. block_num musi byc >= first_data_block (blok 0
+// przed first_data_block przy 1KiB blokach nie jest czescia zadnej grupy). Wywolanie
+// na juz-wolnym bloku (podwojne zwolnienie - blad wywolujacego) jest wykrywane i
+// odrzucane, zeby nie zawyzyc free_blocks_count.
+static bool FreeBlock(uint32_t block_num) {
+    if (block_size == 0 || block_size > EXT2_MAX_BLOCK_SIZE || group_desc_table == nullptr) return false;
+    if (block_num < superblock.first_data_block) return false;
+
+    uint32_t rel = block_num - superblock.first_data_block;
+    uint32_t group = rel / superblock.blocks_per_group;
+    uint32_t bit = rel % superblock.blocks_per_group;
+    if (group >= block_groups_count) return false;
+
+    EnterCritical();
+
+    uint8_t bitmap[EXT2_MAX_BLOCK_SIZE];
+    uint64_t bitmap_offset = (uint64_t)group_desc_table[group].block_bitmap * block_size;
+    if (!ReadDiskBytes((uint32_t)bitmap_offset, block_size, bitmap)) {
+        ExitCritical();
+        return false;
+    }
+
+    uint32_t byte_idx = bit / 8;
+    uint8_t mask = (uint8_t)(1 << (bit % 8));
+    if (!(bitmap[byte_idx] & mask)) {
+        ExitCritical();
+        SerialPort::WriteString("Ext2: FreeBlock - double free (block already marked free).\n");
+        return false;
+    }
+
+    bitmap[byte_idx] &= (uint8_t)~mask;
+    if (!WriteDiskBytes((uint32_t)bitmap_offset, block_size, bitmap)) {
+        ExitCritical();
+        return false;
+    }
+
+    group_desc_table[group].free_blocks_count++;
+    superblock.free_blocks_count++;
+    bool ok = WriteBackGroupDesc(group) && WriteBackSuperblock();
+    ExitCritical();
+    return ok;
 }
 
 // Faza 1b: lokalizacja i-wezla po numerze (numeracja od 1, i-wezel 0 nie istnieje).
@@ -449,7 +605,7 @@ void Ext2::Init() {
     // Tablica deskryptorow grup blokow zaczyna sie w bloku zaraz za superblokiem:
     // trzeci blok (0,1,2) przy 1KiB blokach (first_data_block == 1), drugi (0,1)
     // przy wiekszych blokach (first_data_block == 0).
-    uint32_t bgdt_block = superblock.first_data_block + 1;
+    bgdt_block = superblock.first_data_block + 1;
     uint32_t bgdt_bytes = block_groups_count * sizeof(Ext2GroupDesc);
     uint32_t bgdt_pages = (bgdt_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
     if (bgdt_pages == 0) bgdt_pages = 1;
@@ -559,4 +715,5 @@ void Ext2::Init() {
     } else {
         SerialPort::WriteString("Ext2: ReadFile(/hello.txt) failed (expected on images without the test file).\n");
     }
+
 }
