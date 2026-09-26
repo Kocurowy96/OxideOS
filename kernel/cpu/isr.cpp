@@ -6,6 +6,7 @@
 #include "../drivers/pit.h"
 #include "../drivers/ps2_kbd.h"
 #include "../drivers/ps2_mouse.h"
+#include "../drivers/rtl8139.h"
 #include "../proc/sched.h"
 #include "critical.h"
 
@@ -58,6 +59,10 @@ extern "C" Registers* isr_handler(Registers* regs) {
             Keyboard::HandleInterrupt();
         } else if (int_no == 44) {
             Mouse::HandleInterrupt();
+        } else if (RTL8139::IsPresent() && int_no == 32 + RTL8139::GetIrqLine()) {
+            // Linia IRQ karty sieciowej jest przydzielana w runtime przez PCI (nie znana
+            // z gory jak przy klawiaturze(1)/myszy(12)), stad porownanie zamiast stalej.
+            RTL8139::HandleInterrupt();
         }
         PIC::SendEOI(int_no - 32);
     }
