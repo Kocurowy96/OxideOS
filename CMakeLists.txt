@@ -37,6 +37,8 @@ set(KERNEL_SOURCES
     kernel/drivers/pci.cpp
     kernel/drivers/ac97.cpp
     kernel/drivers/rtl8139.cpp
+    kernel/net/ethernet.cpp
+    kernel/net/arp.cpp
     kernel/fs/vfs.cpp
     # kernel/fs/fat32.cpp - odpiete od builda 2026-09-26 (Ext2 Faza 3b przejela VFS::,
     # nic juz nie woła FAT32::). Plik zostaje w drzewie - moze sie przydac np. gdy

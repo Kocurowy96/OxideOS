@@ -5,6 +5,7 @@
 #include "../cpu/io.h"
 #include "../mem/pmm.h"
 #include "../limine.h"
+#include "../net/ethernet.h"
 
 extern volatile struct limine_hhdm_request hhdm_request;
 
@@ -113,6 +114,9 @@ static void ReadOnePacket() {
         SerialPort::WriteString(" len=");
         WriteDecimal(frame_len);
         SerialPort::WriteString("\n");
+        // Faza 3 (patrz CoworkWithClaude/PLAN_networking.md): rozdzielenie ramki do
+        // wlasciwego protokolu (ARP dzis, IP w Fazie 4) wg EtherType.
+        Ethernet::HandleFrame(frame, frame_len);
     } else {
         SerialPort::WriteString("RTL8139: RX - frame shorter than Ethernet header, skipping.\n");
     }

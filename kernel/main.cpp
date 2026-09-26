@@ -10,6 +10,8 @@
 #include "drivers/pci.h"
 #include "drivers/ac97.h"
 #include "drivers/rtl8139.h"
+#include "net/arp.h"
+#include "net/config.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
 #include "proc/sched.h"
@@ -224,9 +226,12 @@ extern "C" void _start(void) {
 
     PCI::Init();
     AC97::Init();
-    // Faza 1a sieci (patrz CoworkWithClaude/PLAN_networking.md): tylko wykrycie karty +
-    // odczyt MAC, zero TX/RX/IRQ jeszcze.
     RTL8139::Init();
+    // Faza 3 sieci (patrz CoworkWithClaude/PLAN_networking.md): prewarm ARP - poznaj MAC
+    // bramy zanim cokolwiek bedzie trzeba do niej wyslac (Faza 4+). Legalna, permanentna
+    // inicjalizacja stosu sieciowego, nie kod testowy - odpowiedz (jesli przyjdzie)
+    // zaloguje sie sama przez ARP::HandleFrame.
+    if (RTL8139::IsPresent()) ARP::SendRequest(NET_GATEWAY_IP);
 
     // Phase 3 Initialization
     Scheduler::Init();
