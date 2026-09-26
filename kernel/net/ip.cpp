@@ -2,11 +2,13 @@
 #include "arp.h"
 #include "ethernet.h"
 #include "icmp.h"
+#include "udp.h"
 #include "config.h"
 #include "../serial.h"
 
 #define ETHERTYPE_IPV4    0x0800
 #define IP_PROTOCOL_ICMP  1
+#define IP_PROTOCOL_UDP   17
 
 struct IPv4Header {
     uint8_t version_ihl;   // wersja(4b, gora)=4, IHL(4b, dol)=5 (20B, bez opcji)
@@ -96,6 +98,8 @@ void IP::HandleFrame(const uint8_t* data, uint16_t len) {
 
     if (hdr->protocol == IP_PROTOCOL_ICMP) {
         ICMP::HandleFrame(hdr->src_ip, payload, payload_len);
+    } else if (hdr->protocol == IP_PROTOCOL_UDP) {
+        UDP::HandleFrame(hdr->src_ip, payload, payload_len);
     }
-    // Inne protokoly (UDP/TCP - przyszle fazy) na razie ciche.
+    // Inne protokoly (TCP - przyszla faza) na razie ciche.
 }
