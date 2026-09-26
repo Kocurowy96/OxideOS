@@ -1,6 +1,20 @@
 build/
 limine_dir/
 iso_root/
+
+# Artefakty budowania hosta limine wewnatrz zrodel limine-12.5.2/ (configure+make,
+# patrz HOW_WE_WORK.md) - efemeryczne, budowane od nowa co sesje, nie commitowac.
+limine-12.5.2/GNUmakefile
+limine-12.5.2/config.h
+limine-12.5.2/config.log
+limine-12.5.2/config.status
+limine-12.5.2/stage1.stamp
+limine-12.5.2/bin/
+limine-12.5.2/man/man1/limine.1
+limine-12.5.2/common-bios/
+limine-12.5.2/common-uefi-*/
+limine-12.5.2/decompressor-build/
+limine-12.5.2/tools-build/
 *.iso
 *.o
 *.a
