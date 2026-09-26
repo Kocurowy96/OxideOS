@@ -57,6 +57,10 @@ void SaveNotes() {
     sys_write_file("/NOTES.DAT", (const uint8_t*)notes, sizeof(notes));
 }
 
+void LoadNotes() {
+    sys_read_file("/NOTES.DAT", (uint8_t*)notes, sizeof(notes));
+}
+
 void DrawAppButton(int x, int y, int w, int h, const char* text) {
     gui_draw_rect(fb, win_w, x, y, w, h, 0x808080);
     gui_draw_rect(fb, win_w, x, y, w, 2, 0xFFFFFF);
@@ -217,7 +221,8 @@ void _start() {
     for(int i=0; i<31; i++) {
         for(int j=0; j<128; j++) notes[i][j] = '\0';
     }
-    
+    LoadNotes();
+
     PaintCalendar();
     sys_update_window(win_id);
     

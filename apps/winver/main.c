@@ -38,33 +38,15 @@ static void strcat(char* dest, const char* src) {
     *dest = '\0';
 }
 
-void _start() {
-    uint32_t* fb = 0;
-    int win_w = 500;
-    int win_h = 360;
-    int win_id = sys_create_window("O Systemie (WINVER)", win_w, win_h, 400, 200, &fb);
-    
-    if (win_id < 0 || !fb) {
-        sys_print("Failed to create Winver window\n");
-        sys_exit();
-    }
-    
-    gui_draw_rect(fb, win_w, 0, 0, win_w, win_h, 0xC0C0C0);
-    
-    // Narysujemy logo (winver.bmp)
-    // Szerokosc baneru to 400px. Okno ma 500px. (500 - 400) / 2 = 50.
-    sys_draw_bmp(win_id, "/winver.bmp", 50, 20);
-    
-    gui_draw_string(fb, win_w, "System operacyjny OxideOS", 50, 180, 0x000000, 0xC0C0C0);
-    gui_draw_string(fb, win_w, "Stworzony z pomoca Antigravity", 50, 200, 0x000000, 0xC0C0C0);
-    
-    uint64_t total_mem = 0;
-    uint64_t free_mem = 0;
-    sys_get_mem_info(&total_mem, &free_mem);
-    
+static int win_w = 500;
+
+static void PaintMemInfo(uint32_t* fb, uint64_t total_mem, uint64_t free_mem) {
+    // Czyscimy tylko ten jeden wiersz (nie caly ekran) - reszta okna jest statyczna.
+    gui_draw_rect(fb, win_w, 50, 230, win_w - 100, 12, 0xC0C0C0);
+
     char mem_str[100];
     char num_buf[32];
-    
+
     strcpy(mem_str, "Pamiec fizyczna RAM: ");
     itoa(total_mem / (1024 * 1024), num_buf);
     strcat(mem_str, num_buf);
@@ -72,9 +54,34 @@ void _start() {
     itoa(free_mem / (1024 * 1024), num_buf);
     strcat(mem_str, num_buf);
     strcat(mem_str, " MB)");
-    
+
     gui_draw_string(fb, win_w, mem_str, 50, 230, 0x000000, 0xC0C0C0);
-    
+}
+
+void _start() {
+    uint32_t* fb = 0;
+    int win_h = 360;
+    int win_id = sys_create_window("O Systemie (WINVER)", win_w, win_h, 400, 200, &fb);
+
+    if (win_id < 0 || !fb) {
+        sys_print("Failed to create Winver window\n");
+        sys_exit();
+    }
+
+    gui_draw_rect(fb, win_w, 0, 0, win_w, win_h, 0xC0C0C0);
+
+    // Narysujemy logo (winver.bmp)
+    // Szerokosc baneru to 400px. Okno ma 500px. (500 - 400) / 2 = 50.
+    sys_draw_bmp(win_id, "/winver.bmp", 50, 20);
+
+    gui_draw_string(fb, win_w, "System operacyjny OxideOS", 50, 180, 0x000000, 0xC0C0C0);
+    gui_draw_string(fb, win_w, "Wersja jadra 1.0.0", 50, 200, 0x000000, 0xC0C0C0);
+
+    uint64_t total_mem = 0;
+    uint64_t last_free_mem = 0;
+    sys_get_mem_info(&total_mem, &last_free_mem);
+    PaintMemInfo(fb, total_mem, last_free_mem);
+
     // Narysuj przycisk "OK"
     int btn_w = 80;
     int btn_h = 24;
@@ -93,6 +100,14 @@ void _start() {
     
     struct WindowEvent ev;
     while (1) {
+        uint64_t free_mem = 0;
+        sys_get_mem_info(&total_mem, &free_mem);
+        if (free_mem != last_free_mem) {
+            last_free_mem = free_mem;
+            PaintMemInfo(fb, total_mem, last_free_mem);
+            sys_update_window(win_id);
+        }
+
         if (sys_get_event(win_id, &ev)) {
             if (ev.type == 1) { // Mouse Click
                 if (ev.x >= btn_x && ev.x <= btn_x + btn_w && ev.y >= btn_y && ev.y <= btn_y + btn_h) {
