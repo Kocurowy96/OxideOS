@@ -9,6 +9,7 @@
 #include "drivers/pit.h"
 #include "drivers/pci.h"
 #include "drivers/ac97.h"
+#include "drivers/rtl8139.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
 #include "proc/sched.h"
@@ -223,7 +224,10 @@ extern "C" void _start(void) {
 
     PCI::Init();
     AC97::Init();
-    
+    // Faza 1a sieci (patrz CoworkWithClaude/PLAN_networking.md): tylko wykrycie karty +
+    // odczyt MAC, zero TX/RX/IRQ jeszcze.
+    RTL8139::Init();
+
     // Phase 3 Initialization
     Scheduler::Init();
     

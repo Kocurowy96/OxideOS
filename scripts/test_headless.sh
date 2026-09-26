@@ -9,7 +9,12 @@ TIMEOUT="${1:-20}"
 ./scripts/build.sh
 ./scripts/make_disk.sh
 
-QEMU_FLAGS="-m 512M -cdrom oxideos.iso -hda disk.img -boot d -serial stdio -display none"
+# Faza 1a sieci (patrz CoworkWithClaude/PLAN_networking.md): RTL8139 + QEMU user-mode
+# networking (SLIRP, brak roota) - gosc dostaje 10.0.2.15, brama 10.0.2.2. filter-dump
+# przechwytuje caly ruch do net_dump.pcap, czytelne potem przez `tcpdump -r` na hoscie.
+NET_FLAGS="-netdev user,id=net0 -device rtl8139,netdev=net0 -object filter-dump,id=f1,netdev=net0,file=net_dump.pcap"
+
+QEMU_FLAGS="-m 512M -cdrom oxideos.iso -hda disk.img -boot d -serial stdio -display none $NET_FLAGS"
 if [ -e /dev/kvm ]; then
     QEMU_FLAGS="-enable-kvm $QEMU_FLAGS"
 fi

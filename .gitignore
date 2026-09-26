@@ -26,6 +26,7 @@ disk.img
 /icon.bmp
 *.wav
 qemu_audio.wav
+net_dump.pcap
 kocurowy96-moje_rzeczy_do_dev/
 TODO_ASSETS.md
 grafiki_do_zrobienia.md
