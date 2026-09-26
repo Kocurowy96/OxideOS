@@ -1,33 +1,86 @@
 # OxideOS
 
-Autorski, 64-bitowy system operacyjny pisany od zera w C++, z GUI w stylu Windows 95/98/2000. Architektura x86_64, bootowany przez [Limine](https://github.com/limine-bootloader/limine), uruchamiany w `qemu-system-x86_64`.
+A 64-bit x86_64 operating system written from scratch in C++, with a GUI styled after
+Windows 95/98/2000. Booted via [Limine](https://github.com/limine-bootloader/limine),
+developed and tested primarily in `qemu-system-x86_64`.
 
-## Co już działa
+OxideOS is a hobby project built as a human+AI pair — every subsystem below was written,
+debugged, and independently verified (via `tcpdump`, GDB, `debugfs`/`e2fsck`, and headless
+QEMU regression scripts) rather than assumed to work from reading the log output alone.
 
-- Własne jądro x86_64 (GDT/IDT/PIC/PIT, planista zadań, pamięć fizyczna/wirtualna)
-- Sterownik **FAT32** z obsługą długich nazw plików (LFN)
-- Aplikacje userspace jako osobne pliki `.ELF` w `/usr/bin`, uruchamiane w Ring 3 (Kalkulator, Notatnik, Panel Sterowania, Kalendarz, Paint, Menedżer Zadań, Zegar, WinVer)
-- GUI: menedżer okien (Z-order), pasek zadań z systemowym trayem, **Menu Start odzwierciedlające na żywo zawartość `/usr/bin`**
-- Kompozytor ekranu z alpha blendingiem, renderowanie BMP 24/32-bit
-- Dźwięk przez AC97 (WAV)
+## Goal
 
-## Budowanie i uruchamianie
+The GUI is meant to look and feel like late-90s/early-2000s Windows, but the system should
+be genuinely usable, not just a visual pastiche. The long-standing measure of success is a
+self-imposed challenge: run OxideOS as a daily driver for 7 days straight (once a browser
+is ported — see the roadmap below).
 
-Wymagania: `cmake`, `gcc`, `mtools`, `xorriso`, `qemu-system-x86_64`, `ImageMagick`.
+## What works today (09.26.2026)
+
+- **Kernel** (x86_64, own from scratch): GDT/IDT/PIC/PIT, cooperative task scheduler,
+  physical + virtual memory management, interrupt-driven drivers.
+- **Filesystem**: a real **ext2** driver (block/inode allocation bitmaps, directory
+  entries, file read/write/grow/shrink) backing the virtual filesystem layer. Disk images
+  are built with genuine `mke2fs`/`debugfs`, so they're readable by any standard Linux
+  ext2 tooling, not just by OxideOS itself.
+- **Networking**: a full stack built from the hardware up — **RTL8139** NIC driver (PCI
+  detection, RX/TX ring buffers, interrupt-driven), Ethernet framing, **ARP**, **IPv4**,
+  and **ICMP** (OxideOS can ping out to a real gateway and correctly parse the reply, all
+  independently verified against `tcpdump` packet captures).
+- **GUI**: a window manager with Z-ordering, a taskbar with a system tray, alpha-blended
+  compositing, 24/32-bit BMP rendering, and a Start Menu that reflects the live contents of
+  `/usr/bin`.
+- **UI toolkit for apps** ("WinForms-lite", `apps/libgui/widgets.*`): a small `Control`/
+  `Form` widget library with real event dispatch (hit-testing + callbacks), not just shared
+  drawing helpers — apps declare their controls once and stop hand-rolling click detection.
+- **Userspace apps**, each a standalone `.ELF` binary loaded from `/usr/bin` and run in
+  Ring 3: Calculator, Notepad, Control Panel (Settings), Calendar, Paint, Task Manager,
+  Clock, WinVer (About), and a launcher (Hello).
+- **Sound**: WAV playback through an AC97 driver (startup sound, UI feedback sounds).
+
+## Building and running
+
+Requirements: `cmake`, `gcc`, `xorriso`, `qemu-system-x86_64`, `ImageMagick`,
+`e2fsprogs` (`mke2fs`/`debugfs`).
 
 ```bash
 ./scripts/run.sh
 ```
 
-Skrypt buduje jądro i aplikacje, generuje obraz dysku FAT32 (`disk.img`), konwertuje assety z `assets/` (PNG → BMP), tworzy `oxideos.iso` i odpala go w QEMU.
+This builds the kernel and userspace apps, generates an ext2 disk image (`disk.img`) via
+`mke2fs`/`debugfs`, converts assets from `assets/` (PNG → BMP), assembles `oxideos.iso`,
+and boots it in QEMU.
 
-## Cel projektu
+For automated, headless verification (no display, used for regression testing after every
+change) see `scripts/test_headless.sh` and `scripts/headless_interact.sh` — the latter
+drives mouse/keyboard through QMP from a small scenario file, useful for scripted UI
+regression without a human at the keyboard.
 
-System ma wyglądać jak Windows 95/98/2000, ale być realnie używalny na co dzień. Miarą sukcesu jest 7-dniowy challenge korzystania wyłącznie z OxideOS (po sportowaniu przeglądarki, np. Ladybird z SerenityOS).
+## Project structure
 
-## Współpraca
+```
+kernel/       Kernel source: cpu/ (GDT/IDT/ISR/syscalls), drivers/, fs/ (VFS + ext2),
+              mem/ (PMM/VMM), net/ (Ethernet/ARP/IP/ICMP), gui/ (compositor/window
+              manager), proc/ (scheduler)
+apps/         Userspace .ELF applications, plus apps/libgui/ (the shared GUI toolkit)
+scripts/      Build, disk image, and QEMU test/automation scripts
+assets/       Wallpapers, icons, cursors, sounds (source .png/.wav, converted at build time)
+CoworkWithClaude/  Planning docs, task tracker, and working notes for the human+AI workflow
+```
 
-Ten projekt jest rozwijany w duecie z Claude (Anthropic):
+## Documentation
 
-- **Kod** (jądro, sterowniki, GUI, syscalle, aplikacje) — Claude
-- **Assety** (tapety, ikony, dźwięki, grafiki) i testowanie w QEMU — [Kocurowy96](https://github.com/Kocurowy96)
+In-depth write-ups of how individual subsystems actually work (networking stack, ext2
+driver, GUI/widget architecture, syscall interface, boot process, build tooling) live in
+[`docs/`](docs/) — start at [`docs/README.md`](docs/README.md).
+
+## Collaboration
+
+This project is developed as a human+AI duo:
+
+- **Code** (kernel, drivers, GUI, syscalls, apps, tooling) — written jointly with Claude
+  (Anthropic), with every non-trivial change independently verified rather than taken on
+  faith.
+- **Direction, assets, and hands-on testing** —
+  [Kocurowy96](https://github.com/Kocurowy96): wallpapers, icons, sounds, artwork, and
+  real-machine/QEMU testing.
