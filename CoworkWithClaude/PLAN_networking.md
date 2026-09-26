@@ -24,11 +24,27 @@ wszystko naraz.
   DHCP to osobny protokół (UDP + specyficzny format pakietów) który sam w sobie odwlekałby
   pierwszy namacalny efekt — dorzucić później, jeśli kiedyś faktycznie potrzebne (np. do
   prawdziwego sprzętu, gdzie statyczne IP nie ma sensu).
-- **Pierwszy namacalny kamień milowy: odpowiedź na `ping`.** Analogicznie do "Ext2:
-  Initialized successfully" — jasny, łatwo weryfikowalny moment "działa": `ping 10.0.2.15` z
-  hosta podczas gdy OxideOS działa w QEMU dostaje prawdziwe odpowiedzi (nie "Destination
-  unreachable"). Wymaga kompletnego, minimalnego stosu w obie strony: sterownik RTL8139 (TX+RX)
-  + Ethernet + ARP + IP + ICMP.
+- **Pierwszy namacalny kamień milowy: OxideOS samo wysyła `ping` i dostaje prawdziwą
+  odpowiedź.** **KOREKTA z 2026-09-26/27 (zweryfikowane empirycznie przed Fazą 2b, nie
+  zgadywane):** pierwotne założenie "`ping 10.0.2.15` z hosta" jest fałszywe przy QEMU
+  `-netdev user` — podsieć `10.0.2.0/24` jest wewnętrzna wyłącznie dla procesu QEMU (libslirp),
+  host nie ma do niej trasy routingu. Sprawdzone bezpośrednio: `ping 10.0.2.15` z prawdziwego
+  hosta (Kocurowy96'a maszyna) podczas działania OxideOS w QEMU z `-netdev user` zwraca
+  **"Destination Net Unreachable"** natychmiast (odrzucone przez stos sieciowy HOSTA, zanim
+  cokolwiek dotarlo do QEMU — `net_dump.pcap` w tej samej próbie pozostał pusty, 0 pakietów,
+  potwierdzając że nic nie opuściło hosta). **Kierunek kamienia milowego odwrócony:** to
+  OxideOS ma wysłać ICMP echo request do bramy (`10.0.2.2` — libslirp odpowiada na ping do
+  własnego adresu bramy z założenia, do celów diagnostycznych) albo realnego hosta w
+  internecie (np. `8.8.8.8`, NAT-owane przez libslirp) i dostać prawdziwą odpowiedź z powrotem
+  — to jest właściwy, standardowy sposób testowania łączności w trybie `user`. Weryfikacja:
+  log w kernelu pokazujący odebraną odpowiedź (adres, TTL, czas) + `tcpdump -r net_dump.pcap`
+  pokazujący realną wymianę request/reply na drucie. Wymaga kompletnego, minimalnego stosu w
+  obie strony: sterownik RTL8139 (TX+RX) + Ethernet + ARP + IP + ICMP.
+- **Do przyszłych faz (UDP/TCP, gdy testy mają iść w drugą stronę — host łączy się DO
+  OxideOS):** `-netdev user` **wspiera** przekierowanie portów hosta do gościa
+  (`hostfwd=tcp::PORT-:GUESTPORT` / `udp::PORT-:GUESTPORT`, dopisywane do `-netdev user,...`),
+  w odróżnieniu od gołego ICMP. To będzie właściwy mechanizm do testowania np. serwera UDP/TCP
+  w OxideOS przez `nc`/skrypt hosta w Fazach 5-6 — nie trzeba do tego trybu `tap`.
 - **Kolejność UDP przed TCP.** UDP jest drastycznie prostszy (brak automatu stanów połączenia,
   brak retransmisji/okna) — dobry pośredni krok potwierdzający warstwę IP zanim ruszy dużo
   większa złożoność TCP.
@@ -64,37 +80,48 @@ abstrakcji, ale liczba miejsc do zsynchronizowania rośnie z każdym nowym urzą
 
 **Faza 0 — ten dokument + decyzje.** Zrobione.
 
-**Faza 1 — sterownik RTL8139 (wykrycie + tożsamość karty):**
-1a. `PCI::FindDevice(0x10EC, 0x8139, ...)`, odczyt BAR0 (I/O port base), power-on (rejestr
-    Config1), soft reset (rejestr CR, bit RST), odczyt adresu MAC z rejestrów ID0-ID5. Log
-    diagnostyczny z odczytanym MAC — pierwszy namacalny dowód że sterownik w ogóle "widzi"
-    kartę. Weryfikacja: log porównany z MAC-iem który QEMU sam przydzielił karcie (widoczny w
-    logu QEMU albo przez `-device rtl8139,netdev=net0,mac=52:54:00:12:34:56` jeśli wolimy
-    ustalić go z góry zamiast losowego).
-1b. Włączenie odbiornika/nadajnika (rejestr CR, bity RE/TE), konfiguracja bufora RX (rejestr
-    RBSTART — jeden ciągły bufor ~8KB+16, tryb "accept all"/broadcast na start), IRQ (maska
-    w IMR, rejestr ISR do potwierdzania przerwań, wpis do PIC jak inne sterowniki).
+**Faza 1 — sterownik RTL8139 (wykrycie + tożsamość karty). ZROBIONE 2026-09-26/27.**
+1a. Zrobione. `PCI::FindDevice(0x10EC, 0x8139, ...)`, BAR0, power-on, soft reset, odczyt MAC —
+    log porównany z monitorem QEMU (`info pci`), zgodny.
+1b. Zrobione. RX/TX enable, bufor RX (RBSTART), RCR (accept-all+WRAP), IMR (ROK+TOK), IRQ
+    (linia odczytana z PCI config w runtime, nie stała) — zweryfikowane przez monitor QEMU
+    (`info pci` + bezpośredni odczyt rejestru CR portem I/O).
 
 **Faza 2 — surowe ramki Ethernet (TX/RX, bez interpretacji wyżej):**
-2a. TX pojedynczej, ręcznie złożonej ramki testowej (np. broadcast, dowolna zawartość) przez
-    jeden z 4 deskryptorów TX (TSAD/TSD). Weryfikacja: `tcpdump -r dump.pcap` na hoście
-    pokazuje dokładnie tę ramkę.
-2b. RX — obsługa przerwania odbioru, odczyt ramki z bufora cyklicznego, log surowych bajtów
-    nagłówka Ethernet (adresy MAC + EtherType). Weryfikacja: wygenerować dowolny ruch do
-    `10.0.2.15` z hosta (np. `ping`, zanim jeszcze mamy IP — dostaniemy tylko ARP request, ale
-    to już realna ramka do zalogowania) i porównać z `tcpdump`.
+2a. Zrobione. TX pojedynczej, ręcznie złożonej ramki testowej (broadcast, EtherType 0x88B5)
+    przez deskryptor TX0 (TSAD0/TSD0). Zweryfikowane: `tcpdump -r net_dump.pcap` pokazuje
+    ramkę identyczną bajt-po-bajcie (adresy MAC, EtherType, payload, dopełnienie do 60B).
+2b. RX — obsługa przerwania odbioru (`RTL_ISR_ROK`), odczyt nagłówka pakietu z bufora
+    cyklicznego (2B status + 2B długość WŁĄCZNIE z 4B CRC, potem dane), aktualizacja CAPR
+    (uwaga: klasyczny hardware quirk RTL8139 — CAPR musi być ustawiony 16 bajtów PRZED
+    faktyczną pozycją odczytu, udokumentowane w OSDev Wiki, do zweryfikowania ostrożnie przy
+    implementacji, nie zgadywać). Log surowych bajtów nagłówka Ethernet (adresy MAC +
+    EtherType) każdej odebranej ramki. Weryfikacja: uruchomić OxideOS z Fazy 3's własnym ARP
+    request do bramy (patrz niżej) i sprawdzić że odebrana odpowiedź ARP jest poprawnie
+    zalogowana, porównana z `tcpdump` — w praktyce 2b i 3 warto rozwijać razem/naprzemiennie,
+    bo sam gołe RX bez czegokolwiek co generuje ruch DO nas trudno przetestować w izolacji
+    (nikt nie zagada do karty, która nic jeszcze nie ogłasza przez ARP).
 
-**Faza 3 — ARP:** odbiór ARP request (kto ma `10.0.2.15`?) i wysłanie ARP reply z naszym MAC;
-wysłanie własnego ARP request do bramy (`10.0.2.2`) i sparsowanie odpowiedzi — potrzebne żeby
-w ogóle wysłać cokolwiek poza segment. Prosta tablica ARP (statyczna, mały rozmiar, bez
-wygasania na start — wystarczy na czas testów).
+**Faza 3 — ARP:** wysłanie własnego ARP request do bramy (`10.0.2.2`) i sparsowanie
+odpowiedzi — potrzebne żeby w ogóle wysłać cokolwiek poza segment (znać MAC bramy). Odbiór
+ARP request (kto ma `10.0.2.15`?) i wysłanie ARP reply z naszym MAC — dopiero jeśli faktycznie
+ktoś o to zapyta (w praktyce: nikt nie zapyta dopóki nic z zewnątrz nie próbuje connectować do
+`10.0.2.15`, co przy `-netdev user` bez `hostfwd` się nie zdarza — patrz korekta w "Kluczowe
+decyzje" wyżej; ARP reply do zaimplementowania mimo to, dla kompletności/przyszłego hostfwd).
+Prosta tablica ARP (statyczna, mały rozmiar, bez wygasania na start).
 
-**Faza 4 — IP + ICMP (KAMIEŃ MILOWY):** budowa/parsowanie nagłówka IPv4 (bez fragmentacji na
-start, suma kontrolna), ICMP echo request/reply. Weryfikacja: `ping 10.0.2.15` z hosta podczas
-działania OxideOS w QEMU dostaje prawdziwe odpowiedzi (czas round-trip, nie timeout/unreachable).
+**Faza 4 — IP + ICMP (KAMIEŃ MILOWY, kierunek odwrócony — patrz korekta w "Kluczowe
+decyzje"):** budowa/parsowanie nagłówka IPv4 (bez fragmentacji na start, suma kontrolna),
+ICMP echo request/reply. Weryfikacja: OxideOS wysyła ICMP echo request do `10.0.2.2` (brama
+libslirp, odpowiada z założenia) i/albo `8.8.8.8` (realny host w internecie, NAT), loguje
+odebraną odpowiedź (adres/TTL/czas) — potwierdzone też przez `tcpdump -r net_dump.pcap`
+pokazujący realną wymianę request/reply.
 
-**Faza 5 — UDP:** nagłówek UDP + prosty test (np. echo na stałym porcie, weryfikowany przez
-`nc -u 10.0.2.15 <port>` albo mały skrypt Python po stronie hosta).
+**Faza 5 — UDP:** nagłówek UDP + prosty test. Ponieważ `ping`-podobny test "OxideOS łączy się
+NA ZEWNĄTRZ" nie sprawdza się dobrze dla UDP (brak prostego, zawsze-dostępnego usługowego
+"echo" jak ICMP), lepszy test w drugą stronę: prosty serwer UDP echo w OxideOS + `-netdev
+user,...,hostfwd=udp::PORT-:GUESTPORT` + `nc -u localhost <PORT>` z hosta (patrz korekta w
+"Kluczowe decyzje" — `hostfwd` działa dla UDP/TCP, w odróżnieniu od gołego ICMP).
 
 **Faza 6 — TCP (rozbić dalej przy starcie tej fazy, nie z góry):** orientacyjnie handshake
 (SYN/SYN-ACK/ACK) → przesył danych z poprawnymi seq/ack (bez retransmisji) → podstawowa

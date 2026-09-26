@@ -24,6 +24,12 @@ extern volatile struct limine_hhdm_request hhdm_request;
 #define RTL_ISR_ROK      0x01 // Receive OK
 #define RTL_ISR_TOK      0x04 // Transmit OK
 
+#define RTL_REG_TSAD0    0x20 // + 4*deskryptor - fizyczny adres bufora do wyslania
+#define RTL_REG_TSD0     0x10 // + 4*deskryptor - dlugosc (bity 0-12), zapis startuje TX
+#define RTL_TSD_TOK      (1u << 15) // Transmit OK - ustawiane przez karte po udanej transmisji
+
+#define TX_BUFFER_SIZE   1536 // >= max standardowej ramki Ethernet (1514B), zaokraglone
+
 // Bufor RX: klasyczny rozmiar z tutoriali OSDev - 8192B logiczny pierscien + 16B naglowek
 // + 1500B zapasu (RTL8139 moze dopisac troche za koniec "logicznego" bufora zanim
 // zawinie z powrotem, nawet z ustawionym WRAP). Zaokraglone w gore do pelnych stron.
@@ -35,6 +41,8 @@ static uint8_t mac_addr[6] = {0};
 static bool present = false;
 static uint8_t irq_line = 0;
 static void* rx_buffer_phys = nullptr;
+static void* tx_buffer_phys = nullptr;
+static uint8_t* tx_buffer_virt = nullptr;
 
 static void WriteHexByte(uint8_t val) {
     static const char hex[] = "0123456789ABCDEF";
@@ -73,6 +81,32 @@ void RTL8139::HandleInterrupt() {
     if (status & RTL_ISR_TOK) {
         SerialPort::WriteString("RTL8139: TX interrupt.\n");
     }
+}
+
+// Faza 2a: zawsze uzywamy deskryptora 0 - wysylanie jest w pelni synchroniczne (czekamy na
+// TOK zanim wrocimy), wiec nie ma potrzeby rotowac miedzy 4 dostepnymi deskryptorami/buforami
+// (przydaloby sie dopiero przy asynchronicznym/potokowym wysylaniu wielu ramek na raz).
+bool RTL8139::Send(const uint8_t* data, uint16_t len) {
+    if (!present || !tx_buffer_virt) return false;
+    if (len > TX_BUFFER_SIZE) return false;
+
+    // Minimalna dlugosc ramki Ethernet (bez FCS, ktore i tak dolicza sama karta) to 60B -
+    // krotsze ramki trzeba dopelnic zerami.
+    uint16_t padded_len = len < 60 ? 60 : len;
+    for (uint16_t i = 0; i < len; i++) tx_buffer_virt[i] = data[i];
+    for (uint16_t i = len; i < padded_len; i++) tx_buffer_virt[i] = 0;
+
+    outl(io_base + RTL_REG_TSAD0, (uint32_t)(uint64_t)tx_buffer_phys);
+    outl(io_base + RTL_REG_TSD0, padded_len); // zapis dlugosci startuje transmisje
+
+    uint32_t spins = 0;
+    while (!(inl(io_base + RTL_REG_TSD0) & RTL_TSD_TOK)) {
+        if (++spins > 1000000) {
+            SerialPort::WriteString("RTL8139: TX timeout.\n");
+            return false;
+        }
+    }
+    return true;
 }
 
 void RTL8139::Init() {
@@ -146,6 +180,14 @@ void RTL8139::Init() {
     SerialPort::WriteString("RTL8139: RX/TX enabled, IRQ line ");
     WriteDecimal(irq_line);
     SerialPort::WriteString(".\n");
+
+    // Faza 2a: bufor TX (1 strona wystarcza - max standardowa ramka to 1514B).
+    tx_buffer_phys = PMM::AllocatePages(1);
+    if (!tx_buffer_phys) {
+        SerialPort::WriteString("RTL8139: Failed to allocate TX buffer.\n");
+        return;
+    }
+    tx_buffer_virt = (uint8_t*)((uint64_t)tx_buffer_phys + hhdm_request.response->offset);
 
     present = true;
 }
