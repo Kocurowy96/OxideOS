@@ -325,12 +325,15 @@ int Ext2::ListDirectory(const char* path, DirEntry* out_entries, int max_entries
     return count;
 }
 
-// Faza 1e: odczyt zawartosci pliku dla i-wezlow miesczacych sie w 12 blokach
-// bezposrednich (block[0..11]) - pliki wieksze (wymagajace bloku posredniego,
-// block[12]) sa jeszcze nieobslugiwane, to Faza 1f. Wzorowane na
+// Faza 1e/1f: odczyt zawartosci pliku. Do 12 blokow bezposrednich (block[0..11])
+// czytane wprost z i-wezla; od 13-go bloku (Faza 1f) numery blokow pochodza z
+// bloku pojedynczo posredniego (block[12] wskazuje na blok zawierajacy
+// block_size/4 numerow kolejnych blokow danych, uint32 kazdy) - doczytywany co
+// najwyzej raz, tylko jesli plik faktycznie tego wymaga. Podwojnie/potrojnie
+// posrednie (block[13]/block[14]) nadal nieobslugiwane. Wzorowane na
 // FAT32::ReadFile (alokacja przez PMM, hhdm offset), ale zamiast lancucha
-// klastrow FAT iterujemy po tablicy block[] z i-wezla - kazdy wpis to numer
-// bloku ext2 wprost (nie ma odpowiednika FAT do przejscia).
+// klastrow FAT iterujemy po numerach blokow ext2 wprost (nie ma odpowiednika
+// FAT do przejscia).
 bool Ext2::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size) {
     uint32_t inode_nr = 0;
     if (!ResolvePath(path, &inode_nr)) {
@@ -346,11 +349,12 @@ bool Ext2::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size) 
     }
 
     uint32_t size = inode.size;
-    if (size == 0 || block_size == 0) return false;
+    if (size == 0 || block_size == 0 || block_size > EXT2_MAX_BLOCK_SIZE) return false;
 
+    uint32_t pointers_per_block = block_size / sizeof(uint32_t);
     uint32_t blocks_needed = (size + block_size - 1) / block_size;
-    if (blocks_needed > 12) {
-        SerialPort::WriteString("Ext2: ReadFile - file needs indirect blocks (Faza 1f), not supported yet.\n");
+    if (blocks_needed > 12 + pointers_per_block) {
+        SerialPort::WriteString("Ext2: ReadFile - file needs doubly/triply indirect blocks, not supported yet.\n");
         return false;
     }
 
@@ -360,17 +364,42 @@ bool Ext2::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size) 
 
     uint8_t* v_ptr = (uint8_t*)((uint64_t)phys_ptr + hhdm_request.response->offset);
 
+    // Blok pojedynczo posredni (jesli w ogole potrzebny) wczytywany raz do tego
+    // bufora na stosie - analogiczne do block_buf w ResolvePath/ListDirectory.
+    uint32_t indirect_block[EXT2_MAX_BLOCK_SIZE / sizeof(uint32_t)];
+    bool indirect_loaded = false;
+
     uint32_t bytes_read = 0;
     for (uint32_t i = 0; i < blocks_needed; i++) {
-        if (inode.block[i] == 0) {
-            SerialPort::WriteString("Ext2: ReadFile - sparse hole in direct block, not supported yet.\n");
+        uint32_t block_num;
+        if (i < 12) {
+            block_num = inode.block[i];
+        } else {
+            if (!indirect_loaded) {
+                if (inode.block[12] == 0) {
+                    SerialPort::WriteString("Ext2: ReadFile - sparse hole (missing indirect block), not supported yet.\n");
+                    PMM::FreePages(phys_ptr, pages_needed);
+                    return false;
+                }
+                uint64_t indirect_offset = (uint64_t)inode.block[12] * block_size;
+                if (!ReadDiskBytes((uint32_t)indirect_offset, block_size, (uint8_t*)indirect_block)) {
+                    PMM::FreePages(phys_ptr, pages_needed);
+                    return false;
+                }
+                indirect_loaded = true;
+            }
+            block_num = indirect_block[i - 12];
+        }
+
+        if (block_num == 0) {
+            SerialPort::WriteString("Ext2: ReadFile - sparse hole in block, not supported yet.\n");
             PMM::FreePages(phys_ptr, pages_needed);
             return false;
         }
 
         uint32_t remaining = size - bytes_read;
         uint32_t read_len = (remaining < block_size) ? remaining : block_size;
-        uint64_t byte_offset = (uint64_t)inode.block[i] * block_size;
+        uint64_t byte_offset = (uint64_t)block_num * block_size;
 
         if (!ReadDiskBytes((uint32_t)byte_offset, read_len, v_ptr + bytes_read)) {
             PMM::FreePages(phys_ptr, pages_needed);
