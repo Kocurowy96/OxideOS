@@ -41,7 +41,7 @@ gcc -c apps/clock/main.c -o apps/clock/main.o -ffreestanding -O2 -Wall -Wextra -
 ld -nostdlib -Ttext 0xA00000 apps/clock/main.o apps/libgui/gui.o -o CLOCK.ELF -no-pie
 
 gcc -c apps/notepad/main.c -o apps/notepad/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
-ld -nostdlib -Ttext 0xB00000 apps/notepad/main.o apps/libgui/gui.o -o NOTEPAD.ELF -no-pie
+ld -nostdlib -Ttext 0xB00000 apps/notepad/main.o apps/libgui/gui.o apps/libgui/widgets.o -o NOTEPAD.ELF -no-pie
 
 gcc -c apps/taskmgr/main.c -o apps/taskmgr/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
-ld -nostdlib -Ttext 0xC00000 apps/taskmgr/main.o apps/libgui/gui.o -o TASKMGR.ELF -no-pie
+ld -nostdlib -Ttext 0xC00000 apps/taskmgr/main.o apps/libgui/gui.o apps/libgui/widgets.o -o TASKMGR.ELF -no-pie

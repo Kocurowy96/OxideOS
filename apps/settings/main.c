@@ -76,24 +76,6 @@ static void OnThumbnailClick(Control* self) {
     sys_reload_wallpaper();
 }
 
-// Styl 1:1 jak dawny draw_win_button (WinVer ma bardzo podobny recznie rysowany przycisk OK,
-// ale z innym, na sztywno wyliczonym przesunieciem tekstu - tu zostaje osobna, lokalna kopia
-// zamiast wspolnej funkcji w widgets.c, zgodnie z konwencja projektu: male powtorzenie >
-// przedwczesna abstrakcja, patrz HOW_WE_WORK.md).
-static void RenderThinButton(Control* self, Form* f) {
-    gui_form_draw_rect(f, self->x, self->y, self->w, self->h, 0xC0C0C0);
-    gui_form_draw_rect(f, self->x, self->y, self->w, 1, 0xFFFFFF);
-    gui_form_draw_rect(f, self->x, self->y, 1, self->h, 0xFFFFFF);
-    gui_form_draw_rect(f, self->x + self->w - 1, self->y, 1, self->h, 0x000000);
-    gui_form_draw_rect(f, self->x, self->y + self->h - 1, self->w, 1, 0x000000);
-
-    int len = 0;
-    while (self->text[len]) len++;
-    int tx = self->x + (self->w - len * 8) / 2;
-    int ty = self->y + (self->h - 8) / 2;
-    gui_form_draw_string(f, self->text, tx, ty, 0x000000, 0xC0C0C0);
-}
-
 static void RefreshVolumeLabel(void) {
     char num[16];
     strcpy_(volume_label->text, "Glosnosc: ");
@@ -210,9 +192,9 @@ static void RebuildContent(int state) {
         strcat_(line, "%");
         volume_label = gui_form_add_label(&form, 160, 60, line);
 
-        gui_form_add_control(&form, 160, 85, 40, 30, "-", RenderThinButton, OnVolumeDown, NULL);
-        gui_form_add_control(&form, 210, 85, 40, 30, "+", RenderThinButton, OnVolumeUp, NULL);
-        gui_form_add_control(&form, 160, 135, 160, 30, "Testuj dzwiek", RenderThinButton, OnTestSound, NULL);
+        gui_form_add_thin_button(&form, 160, 85, 40, 30, "-", OnVolumeDown, NULL);
+        gui_form_add_thin_button(&form, 210, 85, 40, 30, "+", OnVolumeUp, NULL);
+        gui_form_add_thin_button(&form, 160, 135, 160, 30, "Testuj dzwiek", OnTestSound, NULL);
     } else if (state == 4) {
         gui_form_add_label(&form, 160, 20, "Ustawienia - Mysz");
 
@@ -223,8 +205,8 @@ static void RebuildContent(int state) {
         strcat_(line, "%");
         speed_label = gui_form_add_label(&form, 160, 60, line);
 
-        gui_form_add_control(&form, 160, 85, 40, 30, "-", RenderThinButton, OnMouseSpeedDown, NULL);
-        gui_form_add_control(&form, 210, 85, 40, 30, "+", RenderThinButton, OnMouseSpeedUp, NULL);
+        gui_form_add_thin_button(&form, 160, 85, 40, 30, "-", OnMouseSpeedDown, NULL);
+        gui_form_add_thin_button(&form, 210, 85, 40, 30, "+", OnMouseSpeedUp, NULL);
         gui_form_add_label(&form, 160, 165, "(dziala na PS/2 w trybie relatywnym)");
     }
 }
