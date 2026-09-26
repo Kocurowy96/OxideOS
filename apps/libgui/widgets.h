@@ -46,6 +46,11 @@ Control* gui_form_add_control(Form* form, int x, int y, int w, int h, const char
                                ControlRenderFn render, ControlClickFn on_click, void* user_data);
 Control* gui_form_add_button(Form* form, int x, int y, int w, int h, const char* text,
                               ControlClickFn on_click, void* user_data);
+// Drugi styl przycisku - 1px ramka, tlo 0xC0C0C0, wysrodkowany tekst (inny niz
+// gui_form_add_button/ButtonRender: 2px ramka, tlo 0x808080). Wspolny od Fazy 4, gdy trzecia
+// niezalezna apka (Menedzer Zadan) doszla do tego samego wygladu co WinVer/Ustawienia z Fazy 2.
+Control* gui_form_add_thin_button(Form* form, int x, int y, int w, int h, const char* text,
+                                   ControlClickFn on_click, void* user_data);
 Control* gui_form_add_label(Form* form, int x, int y, const char* text);
 // Pozycja na pasku zakladek/sidebarze - podswietla sie sama, gdy form->active_tab == tab_id
 // (apka ustawia form->active_tab w on_click). Styl na sztywno Win95-sidebar (ciemnoniebieski,

@@ -58,18 +58,6 @@ static void RenderBanner(Control* self, Form* f) {
     sys_draw_bmp(f->win_id, "/winver.bmp", self->x, self->y);
 }
 
-// Styl 1:1 jak oryginalny, recznie rysowany przycisk OK w WinVer - inny niz DrawAppButton
-// Kalkulatora (tu 1px ramka i tlo 0xC0C0C0, tam 2px i 0x808080), wiec wlasny render zamiast
-// wbudowanego gui_form_add_button/ButtonRender, tak samo jak przy wyswietlaczu Kalkulatora.
-static void RenderOkButton(Control* self, Form* f) {
-    gui_form_draw_rect(f, self->x, self->y, self->w, self->h, 0xC0C0C0);
-    gui_form_draw_rect(f, self->x, self->y, self->w, 1, 0xFFFFFF);
-    gui_form_draw_rect(f, self->x, self->y, 1, self->h, 0xFFFFFF);
-    gui_form_draw_rect(f, self->x + self->w - 1, self->y, 1, self->h, 0x000000);
-    gui_form_draw_rect(f, self->x, self->y + self->h - 1, self->w, 1, 0x000000);
-    gui_form_draw_string(f, self->text, self->x + 32, self->y + 8, 0x000000, 0xC0C0C0);
-}
-
 static void OnOkClick(Control* self) {
     (void)self;
     sys_exit();
@@ -114,7 +102,7 @@ void _start() {
     int btn_h = 24;
     int btn_x = (win_w - btn_w) / 2;
     int btn_y = win_h - 40;
-    gui_form_add_control(&form, btn_x, btn_y, btn_w, btn_h, "OK", RenderOkButton, OnOkClick, NULL);
+    gui_form_add_thin_button(&form, btn_x, btn_y, btn_w, btn_h, "OK", OnOkClick, NULL);
 
     gui_form_paint(&form);
     sys_update_window(win_id);

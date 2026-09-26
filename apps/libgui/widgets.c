@@ -58,6 +58,27 @@ static void LabelRender(Control* self, Form* form) {
     gui_form_draw_string(form, self->text, self->x, self->y, 0x000000, 0xFFFFFFFF);
 }
 
+// Drugi styl przycisku - 1px ramka, tlo 0xC0C0C0, wysrodkowany tekst. Wyciagniete do
+// wspolnego uzytku w Fazie 4 po tym jak WinVer (Faza 2, OK), Ustawienia (Faza 2, -/+/
+// "Testuj dzwiek") i Menedzer Zadan (Faza 4, "Zakoncz") niezaleznie doszly do dokladnie
+// tego samego wygladu - trzy realne uzycia to wystarczajacy sygnal, zeby przestac
+// duplikowac (w przeciwienstwie do plaskich, bez-bezelowych przyciskow Kalendarza/
+// Notatnika z Fazy 3/4, ktore sa inne i zostaja lokalne).
+static void ThinButtonRender(Control* self, Form* form) {
+    gui_form_draw_rect(form, self->x, self->y, self->w, self->h, 0xC0C0C0);
+    gui_form_draw_rect(form, self->x, self->y, self->w, 1, 0xFFFFFF);
+    gui_form_draw_rect(form, self->x, self->y, 1, self->h, 0xFFFFFF);
+    gui_form_draw_rect(form, self->x + self->w - 1, self->y, 1, self->h, 0x000000);
+    gui_form_draw_rect(form, self->x, self->y + self->h - 1, self->w, 1, 0x000000);
+
+    int len = 0;
+    while (self->text[len]) len++;
+
+    int tx = self->x + (self->w - len * 8) / 2;
+    int ty = self->y + (self->h - 8) / 2;
+    gui_form_draw_string(form, self->text, tx, ty, 0x000000, 0xC0C0C0);
+}
+
 static void TabRender(Control* self, Form* form) {
     int tab_id = (int)(intptr_t)self->user_data;
     uint32_t bg = (tab_id == form->active_tab) ? 0x34495E : 0x2C3E50;
@@ -110,6 +131,11 @@ Control* gui_form_add_label(Form* form, int x, int y, const char* text) {
 Control* gui_form_add_tab(Form* form, int x, int y, int w, int h, const char* text, int tab_id,
                            ControlClickFn on_click) {
     return gui_form_add_control(form, x, y, w, h, text, TabRender, on_click, (void*)(intptr_t)tab_id);
+}
+
+Control* gui_form_add_thin_button(Form* form, int x, int y, int w, int h, const char* text,
+                                   ControlClickFn on_click, void* user_data) {
+    return gui_form_add_control(form, x, y, w, h, text, ThinButtonRender, on_click, user_data);
 }
 
 void gui_form_paint(Form* form) {
