@@ -107,7 +107,13 @@ if [ -d assets ]; then
             if [[ "$filename" == *.png ]]; then
                 bmp_file="assets/${filename%.png}.bmp"
                 echo "Konwertowanie $filename do 32-bit BMP..."
-                magick "$file" -define bmp:format=bmp3 -define bmp3:alpha=true "BMP3:$bmp_file"
+                # Niektore srodowiska (widziane w kontenerze agenta w chmurze) maja tylko IM6
+                # (`convert`), nie `magick` (IM7) - ten sam fallback co w headless_interact.sh.
+                if command -v magick >/dev/null 2>&1; then
+                    magick "$file" -define bmp:format=bmp3 -define bmp3:alpha=true "BMP3:$bmp_file"
+                else
+                    convert "$file" -define bmp:format=bmp3 -define bmp3:alpha=true "BMP3:$bmp_file"
+                fi
                 add_write "$bmp_file" "/$(basename "$bmp_file")"
             elif [[ "$filename" == *.bmp ]] || [[ "$filename" == *.wav ]]; then
                 add_write "$file" "/$filename"
@@ -137,7 +143,9 @@ add_write "icon.bmp" "/icon.bmp"
 if [ -f assets/wp1_thumb.bmp ]; then
     add_write "assets/wp1_thumb.bmp" "/PICS/wp1_thumb.bmp"
 fi
-add_write "iso_root/bg.bmp" "/bg1.bmp"
+if [ -f iso_root/bg.bmp ]; then
+    add_write "iso_root/bg.bmp" "/bg1.bmp"
+fi
 
 debugfs -w -f "$DEBUGFS_CMDS" disk.img > /dev/null
 

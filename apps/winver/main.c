@@ -1,4 +1,6 @@
-#include "gui.h"
+#include <gui.h>
+#include <widgets.h>
+#include <stddef.h>
 
 static void itoa(uint64_t val, char* buf) {
     if (val == 0) {
@@ -19,12 +21,6 @@ static void itoa(uint64_t val, char* buf) {
     buf[dpos] = '\0';
 }
 
-static int strlen(const char* s) {
-    int len = 0;
-    while(s[len]) len++;
-    return len;
-}
-
 static void strcpy(char* dest, const char* src) {
     while (*src) {
         *dest++ = *src++;
@@ -38,28 +34,61 @@ static void strcat(char* dest, const char* src) {
     *dest = '\0';
 }
 
-static int win_w = 500;
+Form form;
+Control* ram_label;
+uint64_t g_total_mem = 0;
+uint64_t g_last_free_mem = 0;
 
-static void PaintMemInfo(uint32_t* fb, uint64_t total_mem, uint64_t free_mem) {
-    // Czyscimy tylko ten jeden wiersz (nie caly ekran) - reszta okna jest statyczna.
-    gui_draw_rect(fb, win_w, 50, 230, win_w - 100, 12, 0xC0C0C0);
-
-    char mem_str[100];
+static void UpdateRamText(void) {
     char num_buf[32];
+    strcpy(ram_label->text, "Pamiec fizyczna RAM: ");
+    itoa(g_total_mem / (1024 * 1024), num_buf);
+    strcat(ram_label->text, num_buf);
+    strcat(ram_label->text, " MB (Wolne: ");
+    itoa(g_last_free_mem / (1024 * 1024), num_buf);
+    strcat(ram_label->text, num_buf);
+    strcat(ram_label->text, " MB)");
+}
 
-    strcpy(mem_str, "Pamiec fizyczna RAM: ");
-    itoa(total_mem / (1024 * 1024), num_buf);
-    strcat(mem_str, num_buf);
-    strcat(mem_str, " MB (Wolne: ");
-    itoa(free_mem / (1024 * 1024), num_buf);
-    strcat(mem_str, num_buf);
-    strcat(mem_str, " MB)");
+// winver.bmp to baner rysowany bezposrednio syscallem (sys_draw_bmp), nie przez fb - inaczej
+// niz reszta kontrolek. Wlasny render zamiast wbudowanej etykiety, bo trzeba wywolac ten syscall
+// przy kazdym gui_form_paint (pelne przemalowanie czysci cale okno, wiec baner trzeba odrysowac
+// razem z reszta, nie tylko raz przy starcie jak w oryginale).
+static void RenderBanner(Control* self, Form* f) {
+    sys_draw_bmp(f->win_id, "/winver.bmp", self->x, self->y);
+}
 
-    gui_draw_string(fb, win_w, mem_str, 50, 230, 0x000000, 0xC0C0C0);
+// Styl 1:1 jak oryginalny, recznie rysowany przycisk OK w WinVer - inny niz DrawAppButton
+// Kalkulatora (tu 1px ramka i tlo 0xC0C0C0, tam 2px i 0x808080), wiec wlasny render zamiast
+// wbudowanego gui_form_add_button/ButtonRender, tak samo jak przy wyswietlaczu Kalkulatora.
+static void RenderOkButton(Control* self, Form* f) {
+    gui_form_draw_rect(f, self->x, self->y, self->w, self->h, 0xC0C0C0);
+    gui_form_draw_rect(f, self->x, self->y, self->w, 1, 0xFFFFFF);
+    gui_form_draw_rect(f, self->x, self->y, 1, self->h, 0xFFFFFF);
+    gui_form_draw_rect(f, self->x + self->w - 1, self->y, 1, self->h, 0x000000);
+    gui_form_draw_rect(f, self->x, self->y + self->h - 1, self->w, 1, 0x000000);
+    gui_form_draw_string(f, self->text, self->x + 32, self->y + 8, 0x000000, 0xC0C0C0);
+}
+
+static void OnOkClick(Control* self) {
+    (void)self;
+    sys_exit();
+}
+
+static void OnTick(Form* f) {
+    uint64_t free_mem = 0;
+    sys_get_mem_info(&g_total_mem, &free_mem);
+    if (free_mem != g_last_free_mem) {
+        g_last_free_mem = free_mem;
+        UpdateRamText();
+        gui_form_paint(f);
+        sys_update_window(f->win_id);
+    }
 }
 
 void _start() {
     uint32_t* fb = 0;
+    int win_w = 500;
     int win_h = 360;
     int win_id = sys_create_window("O Systemie (WINVER)", win_w, win_h, 400, 200, &fb);
 
@@ -68,55 +97,27 @@ void _start() {
         sys_exit();
     }
 
-    gui_draw_rect(fb, win_w, 0, 0, win_w, win_h, 0xC0C0C0);
+    gui_form_init(&form, win_id, fb, win_w, win_h, 0xC0C0C0);
+    form.on_tick = OnTick;
 
-    // Narysujemy logo (winver.bmp)
-    // Szerokosc baneru to 400px. Okno ma 500px. (500 - 400) / 2 = 50.
-    sys_draw_bmp(win_id, "/winver.bmp", 50, 20);
+    // Szerokosc baneru to 400px, okno ma 500px, (500 - 400) / 2 = 50.
+    gui_form_add_control(&form, 50, 20, 400, 100, NULL, RenderBanner, NULL, NULL);
 
-    gui_draw_string(fb, win_w, "System operacyjny OxideOS", 50, 180, 0x000000, 0xC0C0C0);
-    gui_draw_string(fb, win_w, "Wersja jadra 1.0.0", 50, 200, 0x000000, 0xC0C0C0);
+    gui_form_add_label(&form, 50, 180, "System operacyjny OxideOS");
+    gui_form_add_label(&form, 50, 200, "Wersja jadra 1.0.0");
 
-    uint64_t total_mem = 0;
-    uint64_t last_free_mem = 0;
-    sys_get_mem_info(&total_mem, &last_free_mem);
-    PaintMemInfo(fb, total_mem, last_free_mem);
+    sys_get_mem_info(&g_total_mem, &g_last_free_mem);
+    ram_label = gui_form_add_label(&form, 50, 230, "");
+    UpdateRamText();
 
-    // Narysuj przycisk "OK"
     int btn_w = 80;
     int btn_h = 24;
     int btn_x = (win_w - btn_w) / 2;
     int btn_y = win_h - 40;
-    
-    gui_draw_rect(fb, win_w, btn_x, btn_y, btn_w, btn_h, 0xC0C0C0);
-    gui_draw_rect(fb, win_w, btn_x, btn_y, btn_w, 1, 0xFFFFFF); // top
-    gui_draw_rect(fb, win_w, btn_x, btn_y, 1, btn_h, 0xFFFFFF); // left
-    gui_draw_rect(fb, win_w, btn_x + btn_w - 1, btn_y, 1, btn_h, 0x000000); // right
-    gui_draw_rect(fb, win_w, btn_x, btn_y + btn_h - 1, btn_w, 1, 0x000000); // bottom
-    
-    gui_draw_string(fb, win_w, "OK", btn_x + 32, btn_y + 8, 0x000000, 0xC0C0C0);
-    
-    sys_update_window(win_id);
-    
-    struct WindowEvent ev;
-    while (1) {
-        uint64_t free_mem = 0;
-        sys_get_mem_info(&total_mem, &free_mem);
-        if (free_mem != last_free_mem) {
-            last_free_mem = free_mem;
-            PaintMemInfo(fb, total_mem, last_free_mem);
-            sys_update_window(win_id);
-        }
+    gui_form_add_control(&form, btn_x, btn_y, btn_w, btn_h, "OK", RenderOkButton, OnOkClick, NULL);
 
-        if (sys_get_event(win_id, &ev)) {
-            if (ev.type == 1) { // Mouse Click
-                if (ev.x >= btn_x && ev.x <= btn_x + btn_w && ev.y >= btn_y && ev.y <= btn_y + btn_h) {
-                    sys_exit();
-                }
-            } else if (ev.type == 3) { // Close
-                sys_exit();
-            }
-        }
-        for (volatile int i = 0; i < 10000; i++);
-    }
+    gui_form_paint(&form);
+    sys_update_window(win_id);
+
+    gui_form_run(&form);
 }

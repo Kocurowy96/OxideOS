@@ -3,23 +3,47 @@
 # OxideOS uzywa VMMouse w trybie absolutnym (patrz log bootu "PS/2 Mouse: VMMouse (Absolute)
 # Enabled."), wiec ruch myszy jest zawsze wzgledem calego ekranu (0-0x7FFF na os), nie relatywny.
 import argparse
+import os
 import sys
+import tempfile
 import time
 
 from qmp_client import QMPClient
 
-# Rozdzielczosc negocjowana przez Limine/GOP w QEMU - POTWIERDZONO 2026-09-26 wieczorem
-# na maszynie Kocurowy96 jako 1280x720 (bezposrednio z `identify` na zrzucie ekranu),
-# NIE 1280x800 jak twierdzila wczesniejsza sesja w chmurze (prawdopodobnie inny
-# backend/wersja QEMU w tamtym kontenerze faktycznie negocjowala inna rozdzielczosc -
-# nie ustalono na pewno dlaczego). Blednie zalozone 800 tej samej nocy powodowalo
-# realne, powtarzalne nietrafianie w klikane cele (pozycja Y przesunieta o ~48px na
-# obrazie 720-wysokim) - klikniecie samo w sobie DZIALA poprawnie (potwierdzone przez
-# gdb_inspect.sh: mouse_left faktycznie przechodzi na 1 w kernelu), tylko trafialo w
-# zla wspolrzedna. Jesli klikniecia znow zaczna systematycznie chybiac, ZANIM zmienisz
-# ta stala - zweryfikuj realna rozdzielczosc przez `identify` na swiezym zrzucie z
-# scripts/screendump.sh, nie zakladaj z gory ktora wartosc jest "poprawna".
+# Rozdzielczosc negocjowana przez Limine/GOP w QEMU rozni sie miedzy srodowiskami - widziane
+# 1280x720 na maszynie Kocurowy96, 1280x800 w kontenerze agenta w chmurze (prawdopodobnie inny
+# backend/wersja QEMU), a hardkodowana stala flip-flopowala miedzy sesjami (2026-09-26)
+# powodujac realne, powtarzalne nietrafianie w klikane cele. Zamiast zgadywac na stale,
+# `detect_screen_size()` pyta QEMU wprost (`screendump` + naglowek PPM) - `DEFAULT_SCREEN`
+# zostaje tylko jako fallback gdyby detekcja kiedys zawiodla (np. przed pierwsza klatka
+# obrazu).
 DEFAULT_SCREEN = (1280, 720)
+
+
+def detect_screen_size(client):
+    fd, path = tempfile.mkstemp(suffix=".ppm")
+    os.close(fd)
+    try:
+        resp = client.call({"execute": "screendump", "arguments": {"filename": path}})
+        if "error" in resp:
+            return None
+        with open(path, "rb") as f:
+            if f.readline().strip() != b"P6":
+                return None
+            dims = f.readline()
+            while dims.startswith(b"#"):
+                dims = f.readline()
+            w, h = (int(v) for v in dims.split())
+            return (w, h)
+    except (OSError, ValueError):
+        return None
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 # OxideOS wykrywa klik przez proste probkowanie stanu przycisku w petli renderowania
 # kompozytora (mouse_left && !prev_mouse_left) - bez przytrzymania miedzy "down" i "up"
 # petla czasem nie zdazy zauwazyc przejscia stanu (zmierzone empirycznie 2026-09-20).
@@ -100,7 +124,8 @@ def scroll(client, direction, amount):
 def main():
     parser = argparse.ArgumentParser(description="Steruje mysza/klawiatura headless QEMU przez QMP.")
     parser.add_argument("sock", help="sciezka do gniazda QMP")
-    parser.add_argument("--screen", default=f"{DEFAULT_SCREEN[0]}x{DEFAULT_SCREEN[1]}", help="rozdzielczosc ekranu, np. 1280x720")
+    parser.add_argument("--screen", default=None,
+                         help="rozdzielczosc ekranu, np. 1280x720 - domyslnie wykrywana przez screendump")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_move = sub.add_parser("move", help="przesun kursor w pozycje X Y")
@@ -122,8 +147,13 @@ def main():
     p_type.add_argument("text")
 
     args = parser.parse_args()
-    screen_w, screen_h = (int(v) for v in args.screen.lower().split("x"))
     client = QMPClient(args.sock)
+
+    if args.cmd in ("move", "click"):
+        if args.screen:
+            screen_w, screen_h = (int(v) for v in args.screen.lower().split("x"))
+        else:
+            screen_w, screen_h = detect_screen_size(client) or DEFAULT_SCREEN
 
     if args.cmd == "move":
         move_abs(client, args.x, args.y, screen_w, screen_h)
