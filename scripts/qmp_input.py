@@ -8,7 +8,13 @@ import time
 
 from qmp_client import QMPClient
 
-DEFAULT_SCREEN = (1280, 720)
+# Rzeczywista rozdzielczosc negocjowana przez Limine/GOP w QEMU (potwierdzone
+# bezposrednio przez scripts/screendump.sh - PNG 1280x800, nie 720). Bledna wartosc
+# 720 (do 2026-09-26) psula tylko os Y (szerokosc 1280 sie zgadzala) - QMP absolute
+# pointer skaluje proporcjonalnie do TEGO zalozenia, wiec kliknieca w cele wysokie
+# na kilkanascie-kilkadziesiat pikseli (np. pozycje w Menu Start co 24px) trafialy
+# systematycznie w zly wiersz, mimo poprawnie wyliczonych docelowych wspolrzednych.
+DEFAULT_SCREEN = (1280, 800)
 # OxideOS wykrywa klik przez proste probkowanie stanu przycisku w petli renderowania
 # kompozytora (mouse_left && !prev_mouse_left) - bez przytrzymania miedzy "down" i "up"
 # petla czasem nie zdazy zauwazyc przejscia stanu (zmierzone empirycznie 2026-09-20).

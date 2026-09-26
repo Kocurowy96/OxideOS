@@ -81,7 +81,6 @@ void operator delete[](void* p) {}
 #include "drivers/ata.h"
 #include "fs/vfs.h"
 #include "fs/elf.h"
-#include "fs/ext2.h"
 
 void DesktopTask(void* arg) {
     Compositor::Init();
@@ -214,14 +213,13 @@ extern "C" void _start(void) {
     Keyboard::Init();
     Mouse::Init();
     ATA::Init();
+    // Faza 3b: VFS::Init() wola teraz Ext2::Init() (patrz vfs.cpp) - usunieto
+    // tymczasowe bezposrednie wywolanie Ext2::Init() tutaj (z Fazy 1a, testowalo
+    // sterownik na osobnym obrazie -hdb zanim byl podlaczony do VFS::), ktore od
+    // tej fazy dublowalo by inicjalizacje (i przy okazji przeciekalo pierwsza
+    // alokacje group_desc_table w PMM - drugie Init() nadpisuje wskaznik bez
+    // zwolnienia pierwszego).
     VFS::Init();
-
-    // Faza 1a ext2 (patrz CoworkWithClaude/PLAN_ext2_filesystem.md): sterownik nie
-    // jest podlaczony do VFS:: - to tylko testowe wywolanie do weryfikacji parsowania
-    // superbloku/BGDT na osobnym obrazie mke2fs podlaczonym jako drugi dysk QEMU
-    // (-hdb, primary slave). Jesli takiego dysku nie ma, po prostu loguje blad i
-    // nie ma zadnego wplywu na dalszy rozruch (disk.img/FAT32 zostaja nietkniete).
-    Ext2::Init();
 
     PCI::Init();
     AC97::Init();

@@ -124,31 +124,14 @@ static Ext2GroupDesc* group_desc_table = nullptr;
 static uint32_t bgdt_block = 0; // Faza 2a: zapamietane z Init(), potrzebne zeby zapisac
                                 // pojedynczy Ext2GroupDesc z powrotem po alokacji/zwolnieniu.
 
-static void print_uint32(uint32_t val) {
-    char buf[12] = {0};
-    int i = 0;
-    if (val == 0) buf[i++] = '0';
-    while (val > 0) { buf[i++] = '0' + (val % 10); val /= 10; }
-    for (int j = i - 1; j >= 0; j--) SerialPort::WriteChar(buf[j]);
-}
-
-static void print_hex32(uint32_t val) {
-    SerialPort::WriteString("0x");
-    char buf[9] = {0};
-    for (int i = 7; i >= 0; i--) {
-        int nibble = (val >> (i * 4)) & 0xF;
-        buf[7 - i] = (nibble < 10) ? ('0' + nibble) : ('a' + nibble - 10);
-    }
-    SerialPort::WriteString(buf);
-}
-
-// Faza 1a: sterownik ext2 nie jest jeszcze podlaczony do VFS/disk.img (ktory
-// zostaje FAT32-owy - patrz PLAN_ext2_filesystem.md). Testujemy na osobnym
-// obrazie mke2fs podlaczonym jako drugi dysk QEMU (-hdb == primary slave).
-// W Fazie 3, po przelaczeniu disk.img na ext2, to wywolanie zmieni sie na
-// ATA::ReadSectors (primary master, tak jak dzis FAT32).
+// Faza 3b: disk.img (od Fazy 3a - obraz ext2) jest podlaczony jako primary master
+// (-hda), tak jak wczesniej FAT32 - stad ATA::ReadSectors, NIE ...Slave. Fazy 1-2
+// testowaly sterownik na osobnym obrazie mke2fs podlaczonym jako drugi dysk QEMU
+// (-hdb == primary slave, stad wtedy ReadSectorSlave) zeby nie ryzykowac dzialajacego
+// FAT32/disk.img w trakcie prac - to zabezpieczenie nie jest juz potrzebne, VFS::
+// woła Ext2:: na produkcyjnym dysku (patrz vfs.cpp).
 static bool ReadDiskSector(uint32_t lba, uint8_t* buffer) {
-    return ATA::ReadSectorSlave(lba, buffer);
+    return ATA::ReadSector(lba, buffer);
 }
 
 static bool ReadDiskBytes(uint32_t byte_offset, uint32_t length, uint8_t* out) {
@@ -172,10 +155,10 @@ static bool ReadDiskBytes(uint32_t byte_offset, uint32_t length, uint8_t* out) {
     return true;
 }
 
-// Faza 2a: analogicznie do ReadDiskSector - w Fazie 3b zamieni sie na ATA::WriteSectors
-// (primary master), na razie pisze na osobny obraz testowy podpiety jako -hdb.
+// Faza 3b: analogicznie do ReadDiskSector wyzej - ATA::WriteSector (primary master),
+// nie ...Slave.
 static bool WriteDiskSector(uint32_t lba, const uint8_t* buffer) {
-    return ATA::WriteSectorSlave(lba, buffer);
+    return ATA::WriteSector(lba, buffer);
 }
 
 // Odpowiednik ReadDiskBytes dla zapisu. Pelny sektor pisany jest wprost z `data`;
@@ -1058,93 +1041,4 @@ void Ext2::Init() {
     ExitCritical();
 
     SerialPort::WriteString("Ext2: Initialized successfully.\n");
-
-    // Diagnostyka do reczne porownania z `dumpe2fs test.img` na hoscie (weryfikacja Fazy 1a).
-    SerialPort::WriteString("Ext2: magic="); print_hex32(superblock.magic);
-    SerialPort::WriteString(" block_size="); print_uint32(block_size);
-    SerialPort::WriteString(" blocks_count="); print_uint32(superblock.blocks_count);
-    SerialPort::WriteString(" inodes_count="); print_uint32(superblock.inodes_count);
-    SerialPort::WriteString("\n");
-    SerialPort::WriteString("Ext2: blocks_per_group="); print_uint32(superblock.blocks_per_group);
-    SerialPort::WriteString(" inodes_per_group="); print_uint32(superblock.inodes_per_group);
-    SerialPort::WriteString(" first_data_block="); print_uint32(superblock.first_data_block);
-    SerialPort::WriteString(" block_groups_count="); print_uint32(block_groups_count);
-    SerialPort::WriteString("\n");
-
-    SerialPort::WriteString("Ext2: group[0] block_bitmap="); print_uint32(group_desc_table[0].block_bitmap);
-    SerialPort::WriteString(" inode_bitmap="); print_uint32(group_desc_table[0].inode_bitmap);
-    SerialPort::WriteString(" inode_table="); print_uint32(group_desc_table[0].inode_table);
-    SerialPort::WriteString(" free_blocks="); print_uint32(group_desc_table[0].free_blocks_count);
-    SerialPort::WriteString(" free_inodes="); print_uint32(group_desc_table[0].free_inodes_count);
-    SerialPort::WriteString("\n");
-
-    // Faza 1b: odczyt i-wezla root (zawsze numer 2 w ext2) - do reczne porownania
-    // z `debugfs -R "stat <2>" test.img` na hoscie (weryfikacja Fazy 1b).
-    Ext2Inode root_inode;
-    if (!ReadInode(EXT2_ROOT_INODE, &root_inode)) {
-        SerialPort::WriteString("Ext2: Failed to read root inode.\n");
-        return;
-    }
-
-    SerialPort::WriteString("Ext2: root inode mode="); print_hex32(root_inode.mode);
-    if ((root_inode.mode & EXT2_S_IFMT) == EXT2_S_IFDIR) {
-        SerialPort::WriteString(" (S_IFDIR - OK)");
-    } else {
-        SerialPort::WriteString(" (NOT a directory - unexpected!)");
-    }
-    SerialPort::WriteString(" size="); print_uint32(root_inode.size);
-    SerialPort::WriteString(" links_count="); print_uint32(root_inode.links_count);
-    SerialPort::WriteString(" blocks="); print_uint32(root_inode.blocks);
-    SerialPort::WriteString("\n");
-    SerialPort::WriteString("Ext2: root inode block[0]="); print_uint32(root_inode.block[0]);
-    SerialPort::WriteString(" block[1]="); print_uint32(root_inode.block[1]);
-    SerialPort::WriteString("\n");
-
-    // Faza 1c: test ResolvePath na "/lost+found" - katalog ktory kazdy swiezy obraz
-    // mke2fs tworzy domyslnie w roocie, wiec (w przeciwienstwie do dowolnej nazwy pliku
-    // testowego wgranego reczne przez debugfs) ten test dziala na kazdym obrazie bez
-    // dodatkowego przygotowania. Do reczne porownania z
-    // `debugfs -R "stat <lost+found>" test.img` (ten sam numer i-wezla).
-    uint32_t lost_found_inode = 0;
-    if (ResolvePath("/lost+found", &lost_found_inode)) {
-        SerialPort::WriteString("Ext2: ResolvePath(/lost+found) -> inode=");
-        print_uint32(lost_found_inode);
-        SerialPort::WriteString("\n");
-    } else {
-        SerialPort::WriteString("Ext2: ResolvePath(/lost+found) failed.\n");
-    }
-
-    // Faza 1d: test ListDirectory("/") - do reczne porownania z
-    // `debugfs -R "ls -l /" test.img` na hoscie (te same nazwy/rozmiary/atrybuty,
-    // bez "."/"..", weryfikacja Fazy 1d).
-    DirEntry root_entries[32];
-    int root_count = ListDirectory("/", root_entries, 32);
-    SerialPort::WriteString("Ext2: ListDirectory(/) -> "); print_uint32(root_count);
-    SerialPort::WriteString(" entries\n");
-    for (int i = 0; i < root_count; i++) {
-        SerialPort::WriteString("Ext2:   ");
-        SerialPort::WriteString(root_entries[i].name);
-        SerialPort::WriteString(root_entries[i].attributes & FS_ATTR_DIRECTORY ? " [DIR]" : " [FILE]");
-        SerialPort::WriteString(" size="); print_uint32(root_entries[i].size);
-        SerialPort::WriteString("\n");
-    }
-
-    // Faza 1e: test ReadFile("/hello.txt") - plik testowy dopisywany recznie przez
-    // `debugfs -w` na obrazie mke2fs (patrz raport tej fazy), wiec na "gorym" obrazie
-    // bez tego kroku ResolvePath po prostu nie znajdzie sciezki i test zaloguje "not
-    // found" - bezpieczne, analogicznie do testu ResolvePath(/lost+found) w Fazie 1c
-    // gdy dysk slave w ogole nie jest podpiety. Do reczne porownania zawartosci z
-    // `debugfs -R "cat hello.txt" test.img` na hoscie.
-    uint8_t* file_buf = nullptr;
-    uint32_t file_size = 0;
-    if (ReadFile("/hello.txt", &file_buf, &file_size)) {
-        SerialPort::WriteString("Ext2: ReadFile(/hello.txt) -> "); print_uint32(file_size);
-        SerialPort::WriteString(" bytes: \"");
-        for (uint32_t i = 0; i < file_size; i++) SerialPort::WriteChar((char)file_buf[i]);
-        SerialPort::WriteString("\"\n");
-        FreeFile(file_buf, file_size);
-    } else {
-        SerialPort::WriteString("Ext2: ReadFile(/hello.txt) failed (expected on images without the test file).\n");
-    }
-
 }

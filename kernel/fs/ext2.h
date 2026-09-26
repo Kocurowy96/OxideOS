@@ -20,12 +20,25 @@
 // wieksze pliki (wymagajace bloku posredniego przy zapisie) nadal odrzucane, tak
 // jak podwojnie/potrojnie posrednie przy odczycie. Odczyt i-wezla (Ext2Inode/
 // ReadInode) i rozwiazywanie sciezek (ResolvePath, parser wpisow katalogowych) zyja
-// na razie tylko w ext2.cpp. Sterownik NIE jest jeszcze podlaczony do VFS:: -
-// disk.img zostaje FAT32-owy, testujemy na osobnym obrazie mke2fs podlaczonym jako
-// drugi dysk QEMU (patrz ext2.cpp) - integracja to Faza 3. Uwaga: kernel/proc/
-// sched.cpp - per-task kernel stack zwiekszony z 2 na 8 stron przy okazji Fazy 2c
-// (WriteFile+ResolvePath razem trzymaja na stosie wiecej niz stary budzet 8KiB
-// pozwalal), patrz komentarz tam.
+// na razie tylko w ext2.cpp.
+//
+// (Faza 3a) scripts/make_disk.sh buduje disk.img przez mke2fs zamiast mtools/FAT32.
+// (Faza 3b) kernel/fs/vfs.cpp wola teraz Ext2:: zamiast FAT32:: - disk.img to
+// PRODUKCYJNY obraz na primary master (-hda), wiec ReadDiskSector/WriteDiskSector
+// w ext2.cpp przelaczone z ATA::...Slave (testowe, Fazy 1-2, -hdb) na zwykle
+// ATA::ReadSector/WriteSector. Init() nie robi juz zadnej diagnostyki poza
+// parsowaniem superbloku/BGDT (Fazy 1a-1e-owe testy ResolvePath/ListDirectory/
+// ReadFile usuniete z Init() - byly pomocami deweloperskimi do reczne porownania
+// z hostowym debugfs, niepotrzebne/nieodpowiednie na kazdym prawdziwym boocie
+// produkcyjnym). Zweryfikowane w Fazie 3c pelnym regresem (wszystkie 9 apek z
+// /usr/bin, wiele okien Ring3 na raz, zapis/odczyt tapety i Notatnika przez
+// prawdziwe syscalle, e2fsck -f czysty) - patrz TASKS.md. FAT32:: (fat32.cpp)
+// zostaje w drzewie nietkniete, ale VFS:: juz go nie wywoluje - usuniecie to
+// decyzja wlasciciela repo, nie podjeta automatycznie w tej sesji.
+//
+// Uwaga: kernel/proc/sched.cpp - per-task kernel stack zwiekszony z 2 na 8 stron
+// przy okazji Fazy 2c (WriteFile+ResolvePath razem trzymaja na stosie wiecej niz
+// stary budzet 8KiB pozwalal), patrz komentarz tam.
 class Ext2 {
 public:
     static void Init();
