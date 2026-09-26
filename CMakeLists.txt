@@ -37,7 +37,9 @@ set(KERNEL_SOURCES
     kernel/drivers/pci.cpp
     kernel/drivers/ac97.cpp
     kernel/fs/vfs.cpp
-    kernel/fs/fat32.cpp
+    # kernel/fs/fat32.cpp - odpiete od builda 2026-09-26 (Ext2 Faza 3b przejela VFS::,
+    # nic juz nie woła FAT32::). Plik zostaje w drzewie - moze sie przydac np. gdy
+    # kiedys dojdzie USB i test z prawdziwym pendrive'em sformatowanym w FAT32.
     kernel/fs/ext2.cpp
     kernel/fs/elf.cpp
     kernel/mem/pmm.cpp
