@@ -23,7 +23,7 @@ objcopy --remove-section=.note.gnu.property apps/hello/main.o
 ld -nostdlib -Ttext 0x400000 apps/hello/main.o apps/libgui/gui.o -o HELLO.ELF -no-pie
 
 gcc -c apps/settings/main.c -o apps/settings/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
-ld -nostdlib -Ttext 0x500000 apps/settings/main.o apps/libgui/gui.o -o SETTINGS.ELF -no-pie
+ld -nostdlib -Ttext 0x500000 apps/settings/main.o apps/libgui/gui.o apps/libgui/widgets.o -o SETTINGS.ELF -no-pie
 
 gcc -c apps/calculator/main.c -o apps/calculator/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
 ld -nostdlib -Ttext 0x600000 apps/calculator/main.o apps/libgui/gui.o apps/libgui/widgets.o -o CALC.ELF -no-pie
@@ -35,7 +35,7 @@ gcc -c apps/calendar/main.c -o apps/calendar/main.o -ffreestanding -O2 -Wall -We
 ld -nostdlib -Ttext 0x800000 apps/calendar/main.o apps/libgui/gui.o -o CALENDAR.ELF -no-pie
 
 gcc -c apps/winver/main.c -o apps/winver/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
-ld -nostdlib -Ttext 0x900000 apps/winver/main.o apps/libgui/gui.o -o WINVER.ELF -no-pie
+ld -nostdlib -Ttext 0x900000 apps/winver/main.o apps/libgui/gui.o apps/libgui/widgets.o -o WINVER.ELF -no-pie
 
 gcc -c apps/clock/main.c -o apps/clock/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
 ld -nostdlib -Ttext 0xA00000 apps/clock/main.o apps/libgui/gui.o -o CLOCK.ELF -no-pie

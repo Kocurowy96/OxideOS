@@ -6,6 +6,7 @@ typedef struct Form Form;
 
 typedef void (*ControlRenderFn)(Control* self, Form* form);
 typedef void (*ControlClickFn)(Control* self);
+typedef void (*FormTickFn)(Form* form);
 
 struct Control {
     int x, y, w, h;
@@ -24,6 +25,12 @@ struct Form {
     uint32_t bg_color;
     Control controls[FORM_MAX_CONTROLS];
     int control_count;
+    FormTickFn on_tick;  // wolane raz na kazdy przebieg petli gui_form_run, niezaleznie od zdarzen -
+                         // do stanu ktory zmienia sie sam (np. odswiezanie RAM/zegara w tle). Moze
+                         // byc NULL (domyslnie po gui_form_init) - apka bez takiej potrzeby nic nie robi.
+    int active_tab;      // aktualnie wybrana zakladka dla kontrolek dodanych przez gui_form_add_tab -
+                         // apka sama go ustawia (np. w on_click zakladki), kontrolki inne niz zakladki
+                         // go ignoruja.
 };
 
 void gui_form_init(Form* form, int win_id, uint32_t* fb, int win_w, int win_h, uint32_t bg_color);
@@ -33,6 +40,12 @@ Control* gui_form_add_control(Form* form, int x, int y, int w, int h, const char
 Control* gui_form_add_button(Form* form, int x, int y, int w, int h, const char* text,
                               ControlClickFn on_click, void* user_data);
 Control* gui_form_add_label(Form* form, int x, int y, const char* text);
+// Pozycja na pasku zakladek/sidebarze - podswietla sie sama, gdy form->active_tab == tab_id
+// (apka ustawia form->active_tab w on_click). Styl na sztywno Win95-sidebar (ciemnoniebieski,
+// bialy tekst) - jedyny uzytkownik na razie to Ustawienia, dopisac parametryzacje kolorow
+// dopiero gdy pojawi sie druga apka z inna paleta zakladek.
+Control* gui_form_add_tab(Form* form, int x, int y, int w, int h, const char* text, int tab_id,
+                           ControlClickFn on_click);
 
 void gui_form_paint(Form* form);   // czysci tlo (bg_color) + rysuje wszystkie kontrolki po kolei
 void gui_form_run(Form* form);     // petla: sys_get_event -> hit-test -> on_click -> gui_form_paint -> sys_update_window

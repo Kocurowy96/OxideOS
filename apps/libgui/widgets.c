@@ -1,5 +1,6 @@
 #include "widgets.h"
 #include <stddef.h>
+#include <stdint.h>
 
 void gui_form_draw_rect(Form* form, int x, int y, int w, int h, uint32_t color) {
     // gui_draw_rect juz sprawdza X (kolumna po kolumnie, wzgledem win_w) - tu dopisujemy brakujace
@@ -57,6 +58,13 @@ static void LabelRender(Control* self, Form* form) {
     gui_form_draw_string(form, self->text, self->x, self->y, 0x000000, 0xFFFFFFFF);
 }
 
+static void TabRender(Control* self, Form* form) {
+    int tab_id = (int)(intptr_t)self->user_data;
+    uint32_t bg = (tab_id == form->active_tab) ? 0x34495E : 0x2C3E50;
+    gui_form_draw_rect(form, self->x, self->y, self->w, self->h, bg);
+    gui_form_draw_string(form, self->text, self->x + 20, self->y + (self->h - 8) / 2, 0xFFFFFF, bg);
+}
+
 void gui_form_init(Form* form, int win_id, uint32_t* fb, int win_w, int win_h, uint32_t bg_color) {
     form->win_id = win_id;
     form->fb = fb;
@@ -64,6 +72,8 @@ void gui_form_init(Form* form, int win_id, uint32_t* fb, int win_w, int win_h, u
     form->win_h = win_h;
     form->bg_color = bg_color;
     form->control_count = 0;
+    form->on_tick = NULL;
+    form->active_tab = 0;
 }
 
 Control* gui_form_add_control(Form* form, int x, int y, int w, int h, const char* text,
@@ -96,6 +106,11 @@ Control* gui_form_add_label(Form* form, int x, int y, const char* text) {
     return gui_form_add_control(form, x, y, 0, 0, text, LabelRender, NULL, NULL);
 }
 
+Control* gui_form_add_tab(Form* form, int x, int y, int w, int h, const char* text, int tab_id,
+                           ControlClickFn on_click) {
+    return gui_form_add_control(form, x, y, w, h, text, TabRender, on_click, (void*)(intptr_t)tab_id);
+}
+
 void gui_form_paint(Form* form) {
     gui_form_draw_rect(form, 0, 0, form->win_w, form->win_h, form->bg_color);
     for (int i = 0; i < form->control_count; i++) {
@@ -107,6 +122,8 @@ void gui_form_paint(Form* form) {
 void gui_form_run(Form* form) {
     struct WindowEvent ev;
     while (1) {
+        if (form->on_tick) form->on_tick(form);
+
         if (sys_get_event(form->win_id, &ev)) {
             if (ev.type == GUI_EVENT_MOUSE_CLICK) {
                 for (int i = 0; i < form->control_count; i++) {
@@ -119,6 +136,8 @@ void gui_form_run(Form* form) {
                 }
                 gui_form_paint(form);
                 sys_update_window(form->win_id);
+            } else if (ev.type == GUI_EVENT_CLOSE) {
+                sys_exit();
             }
         }
         for (volatile int i = 0; i < 10000; i++);
