@@ -33,6 +33,14 @@ grafiki_do_zrobienia.md
 __pycache__/
 .cloud-work/
 
+# Serwer pakietow "dla zabawy" (Go) - eksperyment osobno od samego OS, zyje w
+# repo tylko dla wygody (jeden katalog roboczy), nigdy nie commitowany.
+/pkgserver/
+
+# Roadmapa do 1.01.2027 - swiadomie NIE commitowana, zeby nie spoilowac tresci
+# przyszlych odcinkow na kanale YT (patrz sekcja 8 w tym pliku).
+/CoworkWithClaude/ROADMAP_2026.md
+
 # Assety BMP wygenerowane automatycznie przez scripts/run.sh z plikow .png
 # (trzymamy w repo tylko zrodla .png; wyjatki nizej to oryginalne bitmapy bez zrodla .png)
 assets/*.bmp

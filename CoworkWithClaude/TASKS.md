@@ -4,6 +4,10 @@ Wspólna lista zadań dla trybu pracy: w tygodniu (np. gdy Kocurowy96 jest w szk
 może samodzielnie lecieć z pozycjami stąd, a wieczorem/w weekend wspólnie testujemy
 i rozbudowujemy tę listę o nowe pomysły.
 
+Kierunek na dłuższą mete (co chcemy miec zrobione do 1.01.2027, po co i w jakiej
+kolejności) patrz [`ROADMAP_2026.md`](ROADMAP_2026.md) — ta lista (`TASKS.md`) zostaje
+poziomem niżej, dla konkretnych, najbliższych kroków.
+
 ## Jak z tego korzystać
 - **Do zrobienia teraz** — bezpieczne do zrobienia bez nadzoru: dobrze opisane, wąskie zadania.
 - **Do przegadania** — wymaga decyzji/doprecyzowania z Kocurowy96 zanim ruszy autonomicznie.
