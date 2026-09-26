@@ -16,10 +16,12 @@ extern volatile struct limine_hhdm_request hhdm_request;
 #define RTL_REG_IMR      0x3C // Interrupt Mask Register (2 bajty)
 #define RTL_REG_ISR      0x3E // Interrupt Status Register (2 bajty) - "write 1 to clear"
 #define RTL_REG_RCR      0x44 // Receive Config Register (4 bajty)
+#define RTL_REG_CAPR     0x38 // Current Address of Packet Read (2 bajty)
 
 #define RTL_CR_RST       0x10
 #define RTL_CR_RE        0x08
 #define RTL_CR_TE        0x04
+#define RTL_CR_BUFE      0x01 // Buffer Empty (read-only) - 1 = brak danych do odczytu
 
 #define RTL_ISR_ROK      0x01 // Receive OK
 #define RTL_ISR_TOK      0x04 // Transmit OK
@@ -35,12 +37,25 @@ extern volatile struct limine_hhdm_request hhdm_request;
 // zawinie z powrotem, nawet z ustawionym WRAP). Zaokraglone w gore do pelnych stron.
 #define RX_BUFFER_LOGICAL_SIZE (8192 + 16 + 1500)
 #define RX_BUFFER_PAGES 3 // 3*4096 = 12288 > 9708
+// Rozmiar "rdzenia" pierscienia uzywany do arytmetyki zawijania (offset odczytu/CAPR) -
+// CELOWO bez +16+1500 (ten zapas istnieje tylko zeby ostatni pakiet mial gdzie "wystawac"
+// poza logiczna granice pierscienia, sama arytmetyka zawijania liczy sie wzgledem 8192).
+#define RX_RING_SIZE 8192
+
+// Naglowek kazdego odebranego pakietu w buforze RX (dokladajany przez sama karte, przed
+// faktycznymi bajtami ramki): status + dlugosc WLACZNIE z koncowymi 4B CRC.
+struct RxPacketHeader {
+    uint16_t status;
+    uint16_t length;
+} __attribute__((packed));
 
 static uint16_t io_base = 0;
 static uint8_t mac_addr[6] = {0};
 static bool present = false;
 static uint8_t irq_line = 0;
 static void* rx_buffer_phys = nullptr;
+static uint8_t* rx_buffer_virt = nullptr;
+static uint16_t rx_read_offset = 0; // pozycja odczytu w pierscieniu, sledzona przez sterownik
 static void* tx_buffer_phys = nullptr;
 static uint8_t* tx_buffer_virt = nullptr;
 
@@ -70,13 +85,60 @@ uint8_t RTL8139::GetIrqLine() {
     return irq_line;
 }
 
+// Faza 2b: odczytuje jeden pakiet z biezacej pozycji pierscienia RX, loguje naglowek
+// Ethernet (adresy MAC + EtherType), przesuwa rx_read_offset i aktualizuje CAPR.
+static void ReadOnePacket() {
+    RxPacketHeader* hdr = (RxPacketHeader*)(rx_buffer_virt + rx_read_offset);
+
+    // Naglowek uszkodzony/nieprawdopodobny (np. dlugosc 0 albo absurdalnie duza) - nie ma
+    // jak bezpiecznie kontynuowac odczytu tego pakietu ani zaufac dalszej arytmetyce
+    // przesuniecia. Zdarza sie to gl. przy bledach implementacji, nie w normalnej pracy.
+    if (hdr->length < 4 || hdr->length > 1600) {
+        SerialPort::WriteString("RTL8139: RX - suspicious packet header, skipping.\n");
+        return;
+    }
+
+    const uint8_t* frame = (const uint8_t*)(hdr + 1);
+    // hdr->length liczy WLACZNIE 4-bajtowe CRC na koncu - realna ramka Ethernet to
+    // hdr->length - 4 bajtow (naglowek Ethernet + payload, bez CRC).
+    uint16_t frame_len = hdr->length - 4;
+
+    if (frame_len >= 14) { // 6+6+2 = minimalna dlugosc samego naglowka Ethernet
+        SerialPort::WriteString("RTL8139: RX frame, dst=");
+        for (int i = 0; i < 6; i++) { WriteHexByte(frame[i]); if (i < 5) SerialPort::WriteChar(':'); }
+        SerialPort::WriteString(" src=");
+        for (int i = 0; i < 6; i++) { WriteHexByte(frame[6 + i]); if (i < 5) SerialPort::WriteChar(':'); }
+        SerialPort::WriteString(" ethertype=0x");
+        WriteHexByte(frame[12]); WriteHexByte(frame[13]);
+        SerialPort::WriteString(" len=");
+        WriteDecimal(frame_len);
+        SerialPort::WriteString("\n");
+    } else {
+        SerialPort::WriteString("RTL8139: RX - frame shorter than Ethernet header, skipping.\n");
+    }
+
+    // Przesuniecie: naglowek(4B) + hdr->length, zaokraglone w gore do 4B (pakiety w
+    // pierscieniu sa wyrownane do slowa), potem zawiniecie wzgledem RX_RING_SIZE (nie calego
+    // zaalokowanego bufora z zapasem +16+1500 - patrz komentarz przy RX_RING_SIZE).
+    rx_read_offset = (uint16_t)((rx_read_offset + hdr->length + 4 + 3) & ~3u);
+    if (rx_read_offset > RX_RING_SIZE) rx_read_offset -= RX_RING_SIZE;
+
+    // Znany hardware quirk RTL8139 (udokumentowany na OSDev Wiki): CAPR trzeba ustawic 16
+    // bajtow PRZED faktyczna pozycja odczytu, nie na niej wprost.
+    outw(io_base + RTL_REG_CAPR, (uint16_t)(rx_read_offset - 16));
+}
+
 void RTL8139::HandleInterrupt() {
     uint16_t status = inw(io_base + RTL_REG_ISR);
     // "Write 1 to clear" - odpisujemy dokladnie te bity ktore widzielismy ustawione.
     outw(io_base + RTL_REG_ISR, status);
 
     if (status & RTL_ISR_ROK) {
-        SerialPort::WriteString("RTL8139: RX interrupt (not parsed yet - Faza 2).\n");
+        // Jedno przerwanie moze reprezentowac wiecej niz jeden odebrany pakiet (jesli
+        // przyszly szybciej niz obsluga przerwania) - czytamy dopoki karta zglasza dane.
+        while (!(inb(io_base + RTL_REG_CR) & RTL_CR_BUFE)) {
+            ReadOnePacket();
+        }
     }
     if (status & RTL_ISR_TOK) {
         SerialPort::WriteString("RTL8139: TX interrupt.\n");
@@ -159,6 +221,9 @@ void RTL8139::Init() {
         SerialPort::WriteString("RTL8139: Failed to allocate RX buffer.\n");
         return;
     }
+    // Wskaznik hhdm - do faktycznego CZYTANIA zawartosci bufora z poziomu CPU (Faza 2b),
+    // w odroznieniu od fizycznego adresu ktorego chce sama karta (RBSTART, nizej).
+    rx_buffer_virt = (uint8_t*)((uint64_t)rx_buffer_phys + hhdm_request.response->offset);
     // RBSTART chce fizycznego adresu (karta robi DMA bezposrednio do RAM, nie zna
     // wirtualnych adresow jadra) - w odroznieniu od hhdm-owego wskaznika ktorego
     // uzylibysmy do samego CZYTANIA zawartosci bufora z poziomu CPU (Faza 2).
