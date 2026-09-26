@@ -9,6 +9,7 @@ iso_root/
 .serenity/
 disk.img
 *.iso
+/icon.bmp
 *.wav
 qemu_audio.wav
 kocurowy96-moje_rzeczy_do_dev/
