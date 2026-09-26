@@ -44,11 +44,21 @@ void Scheduler::CreateTask(void (*entry)(void*), void* arg) {
         stack_top += hhdm_request.response->offset;
     }
 
-    // Wlasny stos jadra (2 strony = 8192 bajty) na przejscia Ring3->Ring0 (TSS.rsp0).
-    // Bez tego wszystkie taski dzielilyby jeden globalny stos przerwan, co przy
-    // dwoch dzialajacych rownolegle aplikacjach Ring3 mieszalo im stan.
-    void* kstack = PMM::AllocatePages(2);
-    uint64_t kstack_top = (uint64_t)kstack + 8192;
+    // Wlasny stos jadra na przejscia Ring3->Ring0 (TSS.rsp0). Bez tego wszystkie taski
+    // dzielilyby jeden globalny stos przerwan, co przy dwoch dzialajacych rownolegle
+    // aplikacjach Ring3 mieszalo im stan (naprawione 2026-09-11).
+    // 8 stron (32768 bajtow), nie 2 (8192) jak pierwotnie - Faza 2c (ext2 WriteFile,
+    // patrz kernel/fs/ext2.cpp) wprowadza lancuchy wywolan glebsze niz FAT32: np.
+    // Ext2::WriteFile -> ResolvePath -> ReadDirectoryFirstBlock -> ReadDiskBytes, gdzie
+    // WriteFile i ResolvePath KAZDE trzymaja wlasny bufor bloku ~4KiB na stosie
+    // jednoczesnie (WriteFile go nie zwalnia przed wywolaniem ResolvePath) - dwa takie
+    // bufory same w sobie juz wypelniaja caly stary budzet 8192 bajtow, nie zostawiajac
+    // miejsca na ramki wywolan/rejestry/resztę lokalnych zmiennych. Raz gdy Faza 3b
+    // podepnie ten kod pod prawdziwy syscall (sys_write_file, uzywajacy wlasnie tego
+    // per-task stosu), przepelnienie byloby realne i ciche - dokladnie ta sama klasa
+    // buga (psucie pamieci przy Ring3->Ring0) co per-task kernel stack mial naprawiac.
+    void* kstack = PMM::AllocatePages(8);
+    uint64_t kstack_top = (uint64_t)kstack + 32768;
     if (hhdm_request.response != nullptr) {
         kstack_top += hhdm_request.response->offset;
     }

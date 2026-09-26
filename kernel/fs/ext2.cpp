@@ -94,6 +94,13 @@ struct __attribute__((packed)) Ext2Inode {
 #define EXT2_S_IFREG 0x8000
 #define EXT2_ROOT_INODE 2
 
+// Faza 2c: wartosci pola file_type wpisu katalogowego (feature "filetype", wlaczona
+// domyslnie przez wspolczesny mke2fs - patrz superblock.feature_incompat, widoczne
+// tez w dumpe2fs jako "filetype" na liscie Filesystem features). Musimy je ustawiac
+// poprawnie przy tworzeniu nowego wpisu, inaczej e2fsck zglosi niezgodnosc z i_mode.
+#define EXT2_FT_REG_FILE 1
+#define EXT2_FT_DIR 2
+
 // Faza 1c wspiera bloki do 4KiB (najwiekszy rozmiar jaki wspolczesny mke2fs realnie
 // uzywa na x86 - domyslny to 4096). Wieksze bloki (rzadkie, wymagalyby stron > 4KiB)
 // sa odrzucane w ReadDirectoryFirstBlock zamiast przepelnic ponizszy bufor.
@@ -443,6 +450,31 @@ static bool ReadInode(uint32_t inode_nr, Ext2Inode* out) {
     return ReadDiskBytes((uint32_t)byte_offset, read_size, (uint8_t*)out);
 }
 
+// Faza 2c: odwrotnosc ReadInode - zapisuje tylko pola ktore rozumiemy (sizeof(Ext2Inode)
+// = 128 bajtow, rev0/1). Jesli inode_size na tym obrazie jest wiekszy (np. 256 -
+// powszechny domyslny u wspolczesnego mke2fs nawet dla ext2), bajty od 128 wzwyz
+// (rozszerzone atrybuty/i_extra_isize, ktorych i tak nie uzywamy) zostaja nietkniete -
+// dla swiezo zaalokowanego i-wezla powinny juz byc wyzerowane przez mke2fs przy
+// formatowaniu, wiec nie ma czego synchronizowac (to samo swiadome uproszczenie co
+// przy pominietych kopiach zapasowych BGDT w Fazie 2a).
+static bool WriteInode(uint32_t inode_nr, const Ext2Inode* in) {
+    if (inode_nr == 0 || group_desc_table == nullptr) return false;
+
+    uint32_t index = inode_nr - 1;
+    uint32_t group = index / superblock.inodes_per_group;
+    uint32_t index_in_group = index % superblock.inodes_per_group;
+    if (group >= block_groups_count) return false;
+
+    uint32_t inode_size = superblock.inode_size ? superblock.inode_size : 128;
+    uint64_t byte_offset = (uint64_t)group_desc_table[group].inode_table * block_size
+                          + (uint64_t)index_in_group * inode_size;
+
+    uint32_t write_size = sizeof(Ext2Inode);
+    if (inode_size < write_size) write_size = inode_size;
+
+    return WriteDiskBytes((uint32_t)byte_offset, write_size, (const uint8_t*)in);
+}
+
 // Faza 1c: czyta tylko pierwszy blok bezposredni katalogu (block[0]). Uproszczenie
 // swiadome - katalogi wieksze niz jeden blok (np. >200 wpisow przy 1KiB blokach) nie
 // sa jeszcze obslugiwane, do rozszerzenia przy okazji 1e/1f (odczyt przez kolejne
@@ -453,6 +485,18 @@ static bool ReadDirectoryFirstBlock(const Ext2Inode* dir_inode, uint8_t* out_buf
 
     uint64_t byte_offset = (uint64_t)dir_inode->block[0] * block_size;
     return ReadDiskBytes((uint32_t)byte_offset, block_size, out_buffer);
+}
+
+// Faza 2c: odwrotnosc ReadDirectoryFirstBlock - zapisuje zawartosc bloku z powrotem
+// po wstawieniu nowego wpisu katalogowego (patrz FindDirInsertSlot/Ext2::WriteFile).
+// Ta sama uproszczona zalozenie "tylko block[0]" - wstawianie wpisu do katalogu
+// wiekszego niz jeden blok nie jest jeszcze obslugiwane.
+static bool WriteDirectoryFirstBlock(const Ext2Inode* dir_inode, const uint8_t* in_buffer) {
+    if (block_size == 0 || block_size > EXT2_MAX_BLOCK_SIZE) return false;
+    if (dir_inode->block[0] == 0) return false;
+
+    uint64_t byte_offset = (uint64_t)dir_inode->block[0] * block_size;
+    return WriteDiskBytes((uint32_t)byte_offset, block_size, in_buffer);
 }
 
 // Faza 1c: przeszukuje bufor z zawartoscia bloku katalogu (patrz ReadDirectoryFirstBlock)
@@ -479,6 +523,84 @@ static bool FindEntryInBlock(const uint8_t* block_buf, uint32_t buf_len, const c
         offset += entry->rec_len;
     }
     return false;
+}
+
+// Faza 2c: szuka miejsca na nowy wpis katalogowy o dlugosci `needed_len` (juz
+// zaokraglonej do 4 bajtow, naglowek+nazwa) w buforze bloku katalogu. Dwa przypadki,
+// oba standardowe dla klasycznego (bez htree) formatu katalogow ext2:
+//  1. Pusty/skasowany wpis (entry->inode == 0) z rec_len >= needed_len - uzywamy go
+//     w calosci, zachowujac jego dotychczasowy rec_len (nie przycinamy).
+//  2. Zywy wpis, ktorego rec_len jest wiekszy niz jego "prawdziwa" dlugosc (naglowek+
+//     jego wlasna nazwa, zaokraglona do 4B) o co najmniej needed_len - dzielimy go:
+//     przycinamy jego rec_len do prawdziwej dlugosci, a nowy wpis dostaje reszte.
+//     To najczestszy przypadek w praktyce - ostatni wpis w bloku ma zwykle rec_len
+//     "dociagniety" az do konca bloku (patrz komentarz przy Ext2DirEntry wyzej), wiec
+//     zazwyczaj to on ma cala nadwyzke miejsca.
+// Mutuje `block_buf` w miejscu (przycina rec_len dzielonego wpisu) - wywolujacy sam
+// dopisuje tresc nowego wpisu pod zwroconym `out_offset`/`out_rec_len` i zapisuje caly
+// bufor z powrotem (WriteDirectoryFirstBlock). Zwraca false gdy w bloku brakuje
+// miejsca (Faza 2c: tylko pierwszy blok katalogu jest przeszukiwany/rozszerzany -
+// dodanie kolejnego bloku do katalogu, gdy pierwszy jest calkiem pelny, nie jest
+// jeszcze obslugiwane, tak jak ograniczenie ReadDirectoryFirstBlock/ResolvePath).
+static bool FindDirInsertSlot(uint8_t* block_buf, uint32_t buf_len, uint32_t needed_len, uint32_t* out_offset, uint16_t* out_rec_len) {
+    uint32_t offset = 0;
+    while (offset + sizeof(Ext2DirEntry) <= buf_len) {
+        Ext2DirEntry* entry = (Ext2DirEntry*)(block_buf + offset);
+        if (entry->rec_len < sizeof(Ext2DirEntry)) break; // uszkodzony/pusty blok
+
+        if (entry->inode == 0) {
+            if (entry->rec_len >= needed_len) {
+                *out_offset = offset;
+                *out_rec_len = entry->rec_len;
+                return true;
+            }
+        } else {
+            uint32_t actual_len = (sizeof(Ext2DirEntry) + entry->name_len + 3) & ~3u;
+            if (actual_len <= entry->rec_len && (entry->rec_len - actual_len) >= needed_len) {
+                uint16_t leftover = (uint16_t)(entry->rec_len - actual_len);
+                entry->rec_len = (uint16_t)actual_len; // przycinamy dzielony wpis
+                *out_offset = offset + actual_len;
+                *out_rec_len = leftover;
+                return true;
+            }
+        }
+
+        offset += entry->rec_len;
+    }
+    return false;
+}
+
+// Faza 2c: rozdziela sciezke na katalog-rodzic i nazwe ostatniego czlonu, np.
+// "/usr/bin/HELLO.ELF" -> parent_path="/usr/bin", name="HELLO.ELF". Wymaga sciezki
+// zaczynajacej sie od '/' (tak jak wszystkie sciezki w OxideOS - VFS:: zawsze
+// przekazuje je z wiodacym '/', patrz vfs.cpp) - `path == "/"` samo (bez pliku) nie
+// jest poprawnym argumentem dla WriteFile i jest odrzucane.
+static bool SplitParentAndName(const char* path, char* out_parent_path, char* out_name, uint32_t* out_name_len) {
+    if (path[0] != '/') return false;
+
+    int len = 0;
+    while (path[len] != '\0') len++;
+
+    int last_slash = -1;
+    for (int i = 0; i < len; i++) if (path[i] == '/') last_slash = i;
+    if (last_slash < 0) return false; // niemozliwe skoro path[0] == '/', ale dla bezpieczenstwa
+
+    int name_start = last_slash + 1;
+    uint32_t name_len = (uint32_t)(len - name_start);
+    if (name_len == 0 || name_len > 255) return false; // koncowy '/' albo za dluga nazwa
+
+    for (uint32_t i = 0; i < name_len; i++) out_name[i] = path[name_start + i];
+    out_name[name_len] = '\0';
+    *out_name_len = name_len;
+
+    if (last_slash == 0) {
+        out_parent_path[0] = '/';
+        out_parent_path[1] = '\0';
+    } else {
+        for (int i = 0; i < last_slash; i++) out_parent_path[i] = path[i];
+        out_parent_path[last_slash] = '\0';
+    }
+    return true;
 }
 
 // Faza 1c: rozwiazuje sciezke (np. "/usr/bin/HELLO.ELF") na numer i-wezla, zaczynajac
@@ -665,6 +787,127 @@ bool Ext2::ReadFile(const char* path, uint8_t** out_buffer, uint32_t* out_size) 
 
     *out_buffer = v_ptr;
     *out_size = size;
+    return true;
+}
+
+// Faza 2c: WriteFile dla NOWEGO pliku (plik juz istniejacy pod ta nazwa - Faza 2d,
+// na razie jawnie odrzucane, nie nadpisywane). Kolejnosc krokow celowa - najpierw
+// alokujemy i wypelniamy WSZYSTKO (i-wezel, bloki danych, sama tresc i-wezla), a
+// dopiero na koncu dopisujemy wpis katalogowy widoczny z zewnatrz. Dzieki temu jesli
+// cos zawiedzie w trakcie, katalog nigdy nie wskazuje na niekompletny/czesciowo
+// zapisany plik - w najgorszym razie zostaje "cichy" wyciek zaalokowanego i-wezla/
+// blokow (do naprawy przez `e2fsck -f` na hoscie, tak jak dzis wszystkie inne
+// nieobsluzone awarie dysku w tym sterowniku - FAT32::WriteFile tez nie robi
+// pelnego rollbacku na kazdym mozliwym I/O-error, patrz fat32.cpp). Tylko pliki
+// miesczace sie w 12 blokach bezposrednich (jak Faza 1e dla odczytu, przed Faza 1f)
+// - wieksze pliki wymagalyby jednoczesnej alokacji bloku posredniego, zostawione na
+// pozniej jesli sie okaze potrzebne (dzis najwiekszy zapisywany w runtime plik to
+// /notatka.txt z Notatnika, daleko ponizej tego limitu).
+bool Ext2::WriteFile(const char* path, const uint8_t* buffer, uint32_t size) {
+    if (block_size == 0 || block_size > EXT2_MAX_BLOCK_SIZE || group_desc_table == nullptr) return false;
+
+    char parent_path[256];
+    char filename[256];
+    uint32_t name_len = 0;
+    if (!SplitParentAndName(path, parent_path, filename, &name_len)) {
+        SerialPort::WriteString("Ext2: WriteFile - invalid path.\n");
+        return false;
+    }
+
+    uint32_t parent_inode_nr = 0;
+    if (!ResolvePath(parent_path, &parent_inode_nr)) {
+        SerialPort::WriteString("Ext2: WriteFile - parent directory not found.\n");
+        return false;
+    }
+
+    Ext2Inode parent_inode;
+    if (!ReadInode(parent_inode_nr, &parent_inode)) return false;
+    if ((parent_inode.mode & EXT2_S_IFMT) != EXT2_S_IFDIR) {
+        SerialPort::WriteString("Ext2: WriteFile - parent is not a directory.\n");
+        return false;
+    }
+
+    uint8_t block_buf[EXT2_MAX_BLOCK_SIZE];
+    if (!ReadDirectoryFirstBlock(&parent_inode, block_buf)) return false;
+
+    uint32_t existing_inode = 0;
+    if (FindEntryInBlock(block_buf, block_size, filename, name_len, &existing_inode)) {
+        SerialPort::WriteString("Ext2: WriteFile - file already exists, overwrite not supported yet (Faza 2d).\n");
+        return false;
+    }
+
+    uint32_t blocks_needed = (size + block_size - 1) / block_size;
+    if (blocks_needed > 12) {
+        SerialPort::WriteString("Ext2: WriteFile - file needs indirect blocks, not supported yet for new files.\n");
+        return false;
+    }
+
+    uint32_t needed_entry_len = (sizeof(Ext2DirEntry) + name_len + 3) & ~3u;
+    uint32_t insert_offset = 0;
+    uint16_t insert_rec_len = 0;
+    if (!FindDirInsertSlot(block_buf, block_size, needed_entry_len, &insert_offset, &insert_rec_len)) {
+        SerialPort::WriteString("Ext2: WriteFile - no room for new directory entry in parent's first block.\n");
+        return false;
+    }
+
+    uint32_t new_inode_nr = 0;
+    if (!AllocateInode(&new_inode_nr)) {
+        SerialPort::WriteString("Ext2: WriteFile - no free inodes.\n");
+        return false;
+    }
+
+    uint32_t data_blocks[12] = {0};
+    for (uint32_t i = 0; i < blocks_needed; i++) {
+        if (!AllocateBlock(&data_blocks[i])) {
+            for (uint32_t j = 0; j < i; j++) FreeBlock(data_blocks[j]);
+            FreeInode(new_inode_nr);
+            SerialPort::WriteString("Ext2: WriteFile - no free blocks.\n");
+            return false;
+        }
+    }
+
+    uint32_t bytes_written = 0;
+    for (uint32_t i = 0; i < blocks_needed; i++) {
+        uint32_t chunk = block_size;
+        if (size - bytes_written < block_size) chunk = size - bytes_written;
+        uint64_t byte_offset = (uint64_t)data_blocks[i] * block_size;
+        if (!WriteDiskBytes((uint32_t)byte_offset, chunk, buffer + bytes_written)) {
+            for (uint32_t j = 0; j < blocks_needed; j++) FreeBlock(data_blocks[j]);
+            FreeInode(new_inode_nr);
+            SerialPort::WriteString("Ext2: WriteFile - disk write failed while writing data blocks.\n");
+            return false;
+        }
+        bytes_written += chunk;
+    }
+
+    Ext2Inode new_inode = {};
+    new_inode.mode = EXT2_S_IFREG | 0644;
+    new_inode.size = size;
+    new_inode.links_count = 1;
+    new_inode.blocks = blocks_needed * (block_size / 512); // pole "blocks" liczy sektory 512B, nie bloki
+    for (uint32_t i = 0; i < blocks_needed; i++) new_inode.block[i] = data_blocks[i];
+
+    if (!WriteInode(new_inode_nr, &new_inode)) {
+        for (uint32_t j = 0; j < blocks_needed; j++) FreeBlock(data_blocks[j]);
+        FreeInode(new_inode_nr);
+        SerialPort::WriteString("Ext2: WriteFile - failed to write new inode.\n");
+        return false;
+    }
+
+    Ext2DirEntry* new_entry = (Ext2DirEntry*)(block_buf + insert_offset);
+    new_entry->inode = new_inode_nr;
+    new_entry->rec_len = insert_rec_len;
+    new_entry->name_len = (uint8_t)name_len;
+    new_entry->file_type = EXT2_FT_REG_FILE;
+    uint8_t* name_dst = block_buf + insert_offset + sizeof(Ext2DirEntry);
+    for (uint32_t i = 0; i < name_len; i++) name_dst[i] = filename[i];
+
+    if (!WriteDirectoryFirstBlock(&parent_inode, block_buf)) {
+        SerialPort::WriteString("Ext2: WriteFile - failed to write updated directory block.\n");
+        return false;
+    }
+
+    SerialPort::WriteString("Ext2: File written successfully.\n");
     return true;
 }
 

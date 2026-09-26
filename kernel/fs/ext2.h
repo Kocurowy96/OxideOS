@@ -11,12 +11,16 @@
 // posredni (block[12]) dla plikow wiekszych - podwojnie/potrojnie posredni
 // (block[13]/block[14]) wciaz nieobslugiwane. (Faza 2a) doszla bitmapa wolnych blokow
 // (AllocateBlock/FreeBlock), (Faza 2b) analogiczna bitmapa wolnych i-wezlow
-// (AllocateInode/FreeInode) - obie prywatne w ext2.cpp, jeszcze nie podpiety pod
-// zadne publiczne API (WriteFile to wciaz sama deklaracja, Faza 2c). Odczyt i-wezla
-// (Ext2Inode/ReadInode) i rozwiazywanie sciezek (ResolvePath, parser wpisow
-// katalogowych) zyja na razie tylko w ext2.cpp. Sterownik NIE jest jeszcze
-// podlaczony do VFS:: - disk.img zostaje FAT32-owy, testujemy na osobnym obrazie
-// mke2fs podlaczonym jako drugi dysk QEMU (patrz ext2.cpp).
+// (AllocateInode/FreeInode), (Faza 2c) WriteFile dziala dla NOWEGO pliku (alokacja
+// i-wezla+blokow bezposrednich, zapis danych, nowy wpis katalogowy w pierwszym
+// bloku katalogu-rodzica) - nadpisanie istniejacego pliku pod ta sama nazwa jest
+// jawnie odrzucane (Faza 2d). Odczyt i-wezla (Ext2Inode/ReadInode) i rozwiazywanie
+// sciezek (ResolvePath, parser wpisow katalogowych) zyja na razie tylko w ext2.cpp.
+// Sterownik NIE jest jeszcze podlaczony do VFS:: - disk.img zostaje FAT32-owy,
+// testujemy na osobnym obrazie mke2fs podlaczonym jako drugi dysk QEMU (patrz
+// ext2.cpp). Uwaga: kernel/proc/sched.cpp - per-task kernel stack zwiekszony z 2 na
+// 8 stron przy okazji tej fazy (WriteFile+ResolvePath razem trzymaja na stosie
+// wiecej niz stary budzet 8KiB pozwalal), patrz komentarz tam.
 class Ext2 {
 public:
     static void Init();
