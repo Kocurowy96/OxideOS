@@ -319,6 +319,105 @@ static bool FreeBlock(uint32_t block_num) {
     return ok;
 }
 
+// Faza 2b: bitmapa wolnych i-wezlow - 1:1 ten sam wzor co AllocateBlock/FreeBlock
+// wyzej, tylko na group_desc_table[].inode_bitmap/free_inodes_count zamiast
+// block_bitmap/free_blocks_count. Kluczowa roznica: numeracja i-wezlow zaczyna sie
+// od 1 (nie ma odpowiednika first_data_block przy blokach), wiec bit `i` w bitmapie
+// grupy `g` odpowiada i-wezlowi `g*inodes_per_group + i + 1`. I-wezly 1-10
+// (zarezerwowane specyfikacja ext2 - m.in. 2 = root) maja bity juz ustawione przez
+// mke2fs, wiec zwykle liniowe przeszukiwanie od bitu 0 samo je pomija bez
+// specjalnego przypadku. Nie zeruje/nie dotyka tresci samego i-wezla na dysku
+// (mode/size/block[]...) - to zadanie tego kto woła AllocateInode (Faza 2c), tu
+// zajmujemy sie wylacznie bitmapa i licznikami.
+static bool AllocateInode(uint32_t* out_inode_nr) {
+    if (block_size == 0 || block_size > EXT2_MAX_BLOCK_SIZE || group_desc_table == nullptr) return false;
+
+    EnterCritical();
+
+    uint8_t bitmap[EXT2_MAX_BLOCK_SIZE];
+    for (uint32_t group = 0; group < block_groups_count; group++) {
+        if (group_desc_table[group].free_inodes_count == 0) continue;
+
+        uint32_t inodes_in_group = superblock.inodes_per_group;
+        if (group == block_groups_count - 1) {
+            uint32_t accounted = group * superblock.inodes_per_group;
+            uint32_t remaining = superblock.inodes_count - accounted;
+            if (remaining < inodes_in_group) inodes_in_group = remaining;
+        }
+
+        uint64_t bitmap_offset = (uint64_t)group_desc_table[group].inode_bitmap * block_size;
+        if (!ReadDiskBytes((uint32_t)bitmap_offset, block_size, bitmap)) {
+            ExitCritical();
+            return false;
+        }
+
+        for (uint32_t bit = 0; bit < inodes_in_group; bit++) {
+            uint32_t byte_idx = bit / 8;
+            uint8_t mask = (uint8_t)(1 << (bit % 8));
+            if (bitmap[byte_idx] & mask) continue; // zajety
+
+            bitmap[byte_idx] |= mask;
+            if (!WriteDiskBytes((uint32_t)bitmap_offset, block_size, bitmap)) {
+                ExitCritical();
+                return false;
+            }
+
+            group_desc_table[group].free_inodes_count--;
+            superblock.free_inodes_count--;
+            bool ok = WriteBackGroupDesc(group) && WriteBackSuperblock();
+            ExitCritical();
+            if (!ok) return false;
+
+            *out_inode_nr = group * superblock.inodes_per_group + bit + 1;
+            return true;
+        }
+    }
+
+    ExitCritical();
+    SerialPort::WriteString("Ext2: AllocateInode - no free inodes.\n");
+    return false;
+}
+
+// Faza 2b: odwrotnosc AllocateInode, analogiczna do FreeBlock.
+static bool FreeInode(uint32_t inode_nr) {
+    if (block_size == 0 || block_size > EXT2_MAX_BLOCK_SIZE || group_desc_table == nullptr) return false;
+    if (inode_nr == 0) return false;
+
+    uint32_t index = inode_nr - 1;
+    uint32_t group = index / superblock.inodes_per_group;
+    uint32_t bit = index % superblock.inodes_per_group;
+    if (group >= block_groups_count) return false;
+
+    EnterCritical();
+
+    uint8_t bitmap[EXT2_MAX_BLOCK_SIZE];
+    uint64_t bitmap_offset = (uint64_t)group_desc_table[group].inode_bitmap * block_size;
+    if (!ReadDiskBytes((uint32_t)bitmap_offset, block_size, bitmap)) {
+        ExitCritical();
+        return false;
+    }
+
+    uint32_t byte_idx = bit / 8;
+    uint8_t mask = (uint8_t)(1 << (bit % 8));
+    if (!(bitmap[byte_idx] & mask)) {
+        ExitCritical();
+        SerialPort::WriteString("Ext2: FreeInode - double free (inode already marked free).\n");
+        return false;
+    }
+
+    bitmap[byte_idx] &= (uint8_t)~mask;
+    if (!WriteDiskBytes((uint32_t)bitmap_offset, block_size, bitmap)) {
+        ExitCritical();
+        return false;
+    }
+
+    group_desc_table[group].free_inodes_count++;
+    superblock.free_inodes_count++;
+    bool ok = WriteBackGroupDesc(group) && WriteBackSuperblock();
+    ExitCritical();
+    return ok;
+}
+
 // Faza 1b: lokalizacja i-wezla po numerze (numeracja od 1, i-wezel 0 nie istnieje).
 // grupa = (inode_nr - 1) / inodes_per_group, indeks w grupie = (inode_nr - 1) %
 // inodes_per_group, offset bajtowy = group_desc_table[grupa].inode_table * block_size
