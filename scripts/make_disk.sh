@@ -4,10 +4,23 @@ set -e
 # Change to project root
 cd "$(dirname "$0")/.."
 
-# Build limine host tool if not exists
+# limine_dir/ jest gitignored (efemeryczny artefakt budowania, patrz .gitignore) - na
+# swiezym clone repo w ogole nie istnieje. Budujemy go tutaj z commitowanego zrodla
+# limine-12.5.2/ (configure jest juz wygenerowany i zacommitowany, bootstrap/autoconf
+# NIE jest potrzebny). Bez tego kroku caly ten skrypt nie mial szans zadzialac na swiezym
+# clone - do tej pory `limine_dir`/`iso_root/boot/limine` byly recznie odtwarzane co
+# sesje (patrz historia w daily-work-report/), teraz zeskryptowane raz na dobre.
+# --enable-bios* + --enable-uefi-x86-64/-cd: configure domyslnie NIE wlacza zadnego portu
+# (patrz limine-12.5.2/INSTALL.md) - bez tych flag "make install" nie dalby bootloaderow.
 if [ ! -f limine_dir/limine ] && [ ! -f limine_dir/bin/limine ]; then
-    echo "Building Limine host tool..."
-    make -C limine_dir
+    echo "Building Limine host tool + bootloader (bootstrap z limine-12.5.2/)..."
+    (
+        cd limine-12.5.2
+        ./configure --prefix="$(pwd)/../limine_dir" \
+            --enable-bios --enable-bios-cd --enable-uefi-x86-64 --enable-uefi-cd
+        make
+        make install
+    )
 fi
 
 # Sciezka do zbudowanej binarki limine rozni sie miedzy wersjami/konfiguracjami configure
@@ -22,6 +35,30 @@ fi
 # Prepare ISO directory
 mkdir -p iso_root/boot
 cp build/kernel.elf iso_root/boot/
+
+# iso_root/boot/limine/ (bootloader binaries + config) i iso_root/EFI/BOOT/BOOTX64.EFI sa
+# rowniez gitignored efemerycznymi artefaktami - jak wyzej, odtwarzane tutaj zamiast
+# zakladac ze ktos je juz recznie zlozyl. "make install" z configure --prefix kladzie
+# binaria bootloadera w limine_dir/share/limine/ (layout GNU), nie w limine_dir/bin/ -
+# druga sciezka ponizej to fallback dla starszego/recznie zlozonego limine_dir z innym
+# ukladem (widziany w tym repo wczesniej, patrz PLAN_scryptow/daily-work-report).
+mkdir -p iso_root/boot/limine iso_root/EFI/BOOT
+for f in limine-bios-cd.bin limine-bios.sys limine-uefi-cd.bin; do
+    src="limine_dir/share/limine/$f"
+    [ -f "$src" ] || src="limine_dir/bin/$f"
+    [ -f "$src" ] && cp "$src" "iso_root/boot/limine/$f"
+done
+src="limine_dir/share/limine/BOOTX64.EFI"
+[ -f "$src" ] || src="limine_dir/bin/BOOTX64.EFI"
+[ -f "$src" ] && cp "$src" iso_root/EFI/BOOT/BOOTX64.EFI
+
+cat > iso_root/boot/limine/limine.conf <<'LIMINECFG'
+timeout: 0
+
+/OxideOS
+    protocol: limine
+    kernel_path: boot():/boot/kernel.elf
+LIMINECFG
 
 # Generate disk.img (ext2 - patrz CoworkWithClaude/PLAN_ext2_filesystem.md Faza 3a).
 # Zawsze budowany od zera (mke2fs na czystym pliku), bez osobnej sciezki
