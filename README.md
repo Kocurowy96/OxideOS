@@ -15,7 +15,7 @@ be genuinely usable, not just a visual pastiche. The long-standing measure of su
 self-imposed challenge: run OxideOS as a daily driver for 7 days straight (once a browser
 is ported — see the roadmap below).
 
-## What works today (09.26.2026)
+## What works today (09.30.2026)
 
 - **Kernel** (x86_64, own from scratch): GDT/IDT/PIC/PIT, cooperative task scheduler,
   physical + virtual memory management, interrupt-driven drivers.
@@ -25,8 +25,10 @@ is ported — see the roadmap below).
   ext2 tooling, not just by OxideOS itself.
 - **Networking**: a full stack built from the hardware up — **RTL8139** NIC driver (PCI
   detection, RX/TX ring buffers, interrupt-driven), Ethernet framing, **ARP**, **IPv4**,
-  and **ICMP** (OxideOS can ping out to a real gateway and correctly parse the reply, all
-  independently verified against `tcpdump` packet captures).
+  **ICMP** (ping out to a real gateway), **UDP**, a **DHCP** client (fills in our IP/gateway
+  at boot, no more hardcoded addresses), a single-connection **TCP** client, and a minimal
+  **HTTP/1.0** client on top of it — each layer independently verified against `tcpdump`
+  packet captures and real external processes (not just the kernel's own log output).
 - **GUI**: a window manager with Z-ordering, a taskbar with a system tray, alpha-blended
   compositing, 24/32-bit BMP rendering, and a Start Menu that reflects the live contents of
   `/usr/bin`.
@@ -37,6 +39,10 @@ is ported — see the roadmap below).
   Ring 3: Calculator, Notepad, Control Panel (Settings), Calendar, Paint, Task Manager,
   Clock, WinVer (About), and a launcher (Hello).
 - **Sound**: WAV playback through an AC97 driver (startup sound, UI feedback sounds).
+- **Build tooling**: a fresh clone builds and boots with no manual setup step — Limine
+  (bootloader) is bootstrapped automatically from the vendored source on first build — and
+  Windows is a first-class target via WSL2 (`scripts\setup_windows.bat` for one-time setup,
+  `.bat` wrappers for every script — see "Running on Windows" below).
 
 ## Building and running
 
