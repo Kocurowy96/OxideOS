@@ -19,13 +19,19 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem Not every WSL distro is Debian/Ubuntu - if your DEFAULT distro happens to be e.g.
+rem Arch, "apt" doesn't exist there and a hardcoded apt-get call just fails. Detect the
+rem package manager actually available inside WSL and use the matching install command
+rem instead of assuming apt. An unrecognized package manager is a warning, not a hard
+rem stop - cloning below doesn't depend on it, and the packages might already be there.
 echo.
-echo === Installing build toolchain inside WSL (apt) ===
+echo === Installing build toolchain inside WSL ===
 echo You will be asked for your WSL/Linux sudo password below - this is normal.
 echo.
-wsl bash -lc "sudo apt-get update && sudo apt-get install -y git build-essential cmake xorriso qemu-system-x86 imagemagick e2fsprogs nasm mtools gdb python3"
+wsl bash -lc "if command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y git build-essential cmake xorriso qemu-system-x86 imagemagick e2fsprogs nasm mtools gdb python3; elif command -v pacman >/dev/null 2>&1; then sudo pacman -Syu --needed --noconfirm git base-devel cmake xorriso qemu-system-x86 imagemagick e2fsprogs nasm mtools gdb python; else echo 'WARNING: no supported package manager found (looked for apt-get, pacman) - skipping automatic install.' >&2; echo 'Install these manually for your distro: git, a C/C++ toolchain (gcc/make/binutils), cmake, xorriso, qemu-system-x86_64, ImageMagick, e2fsprogs (mke2fs/debugfs), nasm, mtools, gdb, python3.' >&2; fi"
 if errorlevel 1 (
-    echo ERROR: package install failed - see the apt output above.
+    echo ERROR: package install failed - see the output above ^(wrong sudo password,
+    echo network issue, or a package name that doesn't match your distro's repos^).
     exit /b 1
 )
 

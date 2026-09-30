@@ -82,14 +82,17 @@ Setup, once:
    [learn.microsoft.com/windows/wsl/install](https://learn.microsoft.com/windows/wsl/install)),
    then install a distro (e.g. Ubuntu) from the Microsoft Store, and finish its first-time
    setup (it asks you to pick a Linux username/password — that's separate from Windows).
-2. Run `scripts\setup_windows.bat` from a Windows Command Prompt. It installs the build
-   toolchain inside WSL via `apt` (`git`, `build-essential`, `cmake`, `xorriso`,
-   `qemu-system-x86`, `imagemagick`, `e2fsprogs`, `nasm`, `mtools`, `gdb`, `python3` — you'll
-   be prompted for your WSL sudo password, that's expected), then clones OxideOS into a
-   folder you pick (default: next to the script). This exists specifically so a fresh setup
-   can't go half-right by someone cloning into the wrong place or skipping a package — one
-   script does both steps the same way every time. Already have a manual WSL setup or a
-   clone? Skip it and just make sure the packages above are installed.
+2. Run `scripts\setup_windows.bat` from a Windows Command Prompt. It detects whether your
+   default WSL distro uses `apt` (Debian/Ubuntu) or `pacman` (Arch) and installs the build
+   toolchain accordingly (`git`, a C/C++ toolchain, `cmake`, `xorriso`, `qemu-system-x86_64`,
+   ImageMagick, `e2fsprogs`, `nasm`, `mtools`, `gdb`, `python3` — you'll be prompted for your
+   WSL sudo password, that's expected), then clones OxideOS into a folder you pick (default:
+   next to the script). On any other distro it skips the automatic install and tells you
+   what to install by hand instead of failing on a package manager that isn't there. This
+   exists specifically so a fresh setup can't go half-right by someone cloning into the
+   wrong place or skipping a package — one script does both steps the same way every time.
+   Already have a manual WSL setup or a clone? Skip it and just make sure the packages above
+   are installed.
 
 Then, from a Windows Command Prompt / PowerShell in the cloned repo root:
 
