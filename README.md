@@ -40,8 +40,9 @@ is ported — see the roadmap below).
 
 ## Building and running
 
-Requirements: `cmake`, `gcc`, `xorriso`, `qemu-system-x86_64`, `ImageMagick`,
-`e2fsprogs` (`mke2fs`/`debugfs`).
+Requirements: `git`, `cmake`, `gcc`/`ld` (`build-essential` on Debian/Ubuntu), `xorriso`,
+`qemu-system-x86_64`, `ImageMagick`, `e2fsprogs` (`mke2fs`/`debugfs`), `nasm`, `mtools`
+(the last two build Limine itself from the vendored `limine-12.5.2/` source — see below).
 
 ```bash
 ./scripts/run.sh
@@ -49,7 +50,9 @@ Requirements: `cmake`, `gcc`, `xorriso`, `qemu-system-x86_64`, `ImageMagick`,
 
 This builds the kernel and userspace apps, generates an ext2 disk image (`disk.img`) via
 `mke2fs`/`debugfs`, converts assets from `assets/` (PNG → BMP), assembles `oxideos.iso`,
-and boots it in QEMU.
+and boots it in QEMU. On first run it also bootstraps `limine_dir/` and
+`iso_root/boot/limine/` (both gitignored, so a fresh clone starts without them) straight
+from the `limine-12.5.2/` source that *is* committed — no manual Limine setup step needed.
 
 For automated, headless verification (no display, used for regression testing after every
 change) see `scripts/test_headless.sh` and `scripts/headless_interact.sh` — the latter
@@ -65,18 +68,24 @@ Windows equivalent of it. So the Windows `.bat` files in `scripts/` (one per `.s
 `headless_interact.bat`, `gdb_inspect.bat`) are thin wrappers that run the real `.sh`
 script inside **WSL2** (Windows Subsystem for Linux), rather than reimplementing the build
 in batch — that keeps exactly one real implementation of each script instead of two that
-could quietly drift apart.
+could quietly drift apart. There's one extra one with no `.sh` counterpart,
+`setup_windows.bat` — one-time environment setup, see below.
 
 Setup, once:
 1. Install WSL2: `wsl --install` (or see
    [learn.microsoft.com/windows/wsl/install](https://learn.microsoft.com/windows/wsl/install)),
-   then install a distro (e.g. Ubuntu) from the Microsoft Store.
-2. Inside that WSL distro, clone this repo and install the same packages listed under
-   *Requirements* above (`cmake`, `gcc`, `xorriso`, `qemu-system-x86_64`, `ImageMagick`,
-   `e2fsprogs`) — e.g. on Ubuntu: `sudo apt install build-essential cmake xorriso
-   qemu-system-x86 imagemagick e2fsprogs gdb`.
+   then install a distro (e.g. Ubuntu) from the Microsoft Store, and finish its first-time
+   setup (it asks you to pick a Linux username/password — that's separate from Windows).
+2. Run `scripts\setup_windows.bat` from a Windows Command Prompt. It installs the build
+   toolchain inside WSL via `apt` (`git`, `build-essential`, `cmake`, `xorriso`,
+   `qemu-system-x86`, `imagemagick`, `e2fsprogs`, `nasm`, `mtools`, `gdb`, `python3` — you'll
+   be prompted for your WSL sudo password, that's expected), then clones OxideOS into a
+   folder you pick (default: next to the script). This exists specifically so a fresh setup
+   can't go half-right by someone cloning into the wrong place or skipping a package — one
+   script does both steps the same way every time. Already have a manual WSL setup or a
+   clone? Skip it and just make sure the packages above are installed.
 
-Then, from a Windows Command Prompt / PowerShell in the repo root:
+Then, from a Windows Command Prompt / PowerShell in the cloned repo root:
 
 ```bat
 scripts\run.bat
