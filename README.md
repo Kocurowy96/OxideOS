@@ -56,6 +56,48 @@ change) see `scripts/test_headless.sh` and `scripts/headless_interact.sh` — th
 drives mouse/keyboard through QMP from a small scenario file, useful for scripted UI
 regression without a human at the keyboard.
 
+### Running on Windows
+
+The build toolchain above (`mke2fs`/`debugfs`, `xorriso`, and the freestanding-ELF `gcc`/
+`ld` invocations that link userspace apps) is Linux-specific tooling — there's no native
+Windows equivalent of it. So the Windows `.bat` files in `scripts/` (one per `.sh` script:
+`build.bat`, `make_disk.bat`, `run.bat`, `test_headless.bat`, `screendump.bat`,
+`headless_interact.bat`, `gdb_inspect.bat`) are thin wrappers that run the real `.sh`
+script inside **WSL2** (Windows Subsystem for Linux), rather than reimplementing the build
+in batch — that keeps exactly one real implementation of each script instead of two that
+could quietly drift apart.
+
+Setup, once:
+1. Install WSL2: `wsl --install` (or see
+   [learn.microsoft.com/windows/wsl/install](https://learn.microsoft.com/windows/wsl/install)),
+   then install a distro (e.g. Ubuntu) from the Microsoft Store.
+2. Inside that WSL distro, clone this repo and install the same packages listed under
+   *Requirements* above (`cmake`, `gcc`, `xorriso`, `qemu-system-x86_64`, `ImageMagick`,
+   `e2fsprogs`) — e.g. on Ubuntu: `sudo apt install build-essential cmake xorriso
+   qemu-system-x86 imagemagick e2fsprogs gdb`.
+
+Then, from a Windows Command Prompt / PowerShell in the repo root:
+
+```bat
+scripts\run.bat
+```
+
+What opens: this builds the kernel and apps and the disk image inside WSL, then boots
+`oxideos.iso` in `qemu-system-x86_64` — the QEMU window appears on the normal Windows
+desktop (WSL2/WSLg forwards Linux GUI apps automatically on current Windows 11/10
+builds), exactly like running `./scripts/run.sh` directly in a Linux terminal.
+`scripts\test_headless.bat` and `scripts\screendump.bat` instead run QEMU with
+`-display none` (as their `.sh` counterparts do) and print PASS/FAIL or write a
+screenshot file — nothing opens on screen for those.
+
+Each `.bat` file just calls `wsl bash -lc "./scripts/<name>.sh ..."`, forwarding any
+arguments straight through, so paths for `headless_interact.bat`/`gdb_inspect.bat` should
+be given as WSL sees them (plain relative paths from the repo root, or `/mnt/c/...` for a
+Windows path) — they are not translated. **Not tested on a real Windows machine** — the
+`.sh` scripts themselves are unchanged and already verified, but running them through
+these wrappers hasn't been independently confirmed on Windows yet; if something doesn't
+work as documented here, please open an issue.
+
 ## Project structure
 
 ```

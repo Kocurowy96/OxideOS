@@ -3,11 +3,13 @@
 #include "ethernet.h"
 #include "icmp.h"
 #include "udp.h"
+#include "tcp.h"
 #include "config.h"
 #include "../serial.h"
 
 #define ETHERTYPE_IPV4    0x0800
 #define IP_PROTOCOL_ICMP  1
+#define IP_PROTOCOL_TCP   6
 #define IP_PROTOCOL_UDP   17
 
 struct IPv4Header {
@@ -48,7 +50,15 @@ static uint16_t next_id = 1;
 
 bool IP::Send(const uint8_t dst_ip[4], uint8_t protocol, const uint8_t* payload, uint16_t payload_len) {
     uint8_t dst_mac[6];
-    if (!ARP::Resolve(dst_ip, dst_mac)) {
+    // Rozglaszanie IP (255.255.255.255) - uzywane przez DHCP (Faza 6a) zanim klient ma
+    // jakikolwiek przydzielony adres/brame do ARP-owania. Nie ma sensu pytac ARP-em "kto ma
+    // adres rozgloszeniowy" - idzie wprost na rozgloszeniowy adres Ethernet, pomijajac ARP
+    // calkowicie. Wszystkie dotychczasowe wywolania (ICMP/UDP) przekazuja realne adresy
+    // jednostkowe, wiec ta galaz nigdy ich nie dotyczy.
+    bool is_broadcast = dst_ip[0] == 255 && dst_ip[1] == 255 && dst_ip[2] == 255 && dst_ip[3] == 255;
+    if (is_broadcast) {
+        for (int i = 0; i < 6; i++) dst_mac[i] = 0xFF;
+    } else if (!ARP::Resolve(dst_ip, dst_mac)) {
         ARP::SendRequest(dst_ip);
         // Ograniczone czekanie na odpowiedz ARP - w emulacji (SLIRP) zazwyczaj blyskawiczne
         // (patrz Faza 3, ~34us), ale NIE zakladamy tego na sztywno - prawdziwy limit
@@ -100,6 +110,8 @@ void IP::HandleFrame(const uint8_t* data, uint16_t len) {
         ICMP::HandleFrame(hdr->src_ip, payload, payload_len);
     } else if (hdr->protocol == IP_PROTOCOL_UDP) {
         UDP::HandleFrame(hdr->src_ip, payload, payload_len);
+    } else if (hdr->protocol == IP_PROTOCOL_TCP) {
+        TCP::HandleFrame(hdr->src_ip, payload, payload_len);
     }
-    // Inne protokoly (TCP - przyszla faza) na razie ciche.
+    // Inne protokoly - po cichu ignorowane.
 }

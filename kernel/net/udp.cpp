@@ -1,10 +1,12 @@
 #include "udp.h"
 #include "ip.h"
+#include "dhcp.h"
 #include "config.h"
 #include "../serial.h"
 
-#define IP_PROTOCOL_UDP  17
-#define UDP_ECHO_PORT    7 // RFC 862 "Echo Protocol" - dokladnie to implementujemy
+#define IP_PROTOCOL_UDP   17
+#define UDP_ECHO_PORT     7  // RFC 862 "Echo Protocol" - dokladnie to implementujemy
+#define UDP_DHCP_CLIENT_PORT 68 // Faza 6a - port na ktory serwer DHCP odpowiada klientowi
 
 struct UdpHeader {
     uint16_t src_port; // kolejnosc sieciowa
@@ -111,6 +113,8 @@ void UDP::HandleFrame(const uint8_t src_ip[4], const uint8_t* data, uint16_t len
         SerialPort::WriteString("B - odsylam.\n");
 
         UDP::Send(src_ip, UDP_ECHO_PORT, src_port, payload, payload_len);
+    } else if (dst_port == UDP_DHCP_CLIENT_PORT) {
+        DHCP::HandleFrame(payload, payload_len);
     }
     // Inne porty - po cichu ignorowane (brak zarejestrowanych "gniazd"/callbackow na porty,
     // to dopiero Faza 7 - API dla aplikacji).

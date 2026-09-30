@@ -11,6 +11,7 @@
 #include "drivers/ac97.h"
 #include "drivers/rtl8139.h"
 #include "net/arp.h"
+#include "net/dhcp.h"
 #include "net/config.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
@@ -227,11 +228,16 @@ extern "C" void _start(void) {
     PCI::Init();
     AC97::Init();
     RTL8139::Init();
-    // Faza 3 sieci (patrz CoworkWithClaude/PLAN_networking.md): prewarm ARP - poznaj MAC
-    // bramy zanim cokolwiek bedzie trzeba do niej wyslac (Faza 4+). Legalna, permanentna
-    // inicjalizacja stosu sieciowego, nie kod testowy - odpowiedz (jesli przyjdzie)
-    // zaloguje sie sama przez ARP::HandleFrame.
-    if (RTL8139::IsPresent()) ARP::SendRequest(NET_GATEWAY_IP);
+    if (RTL8139::IsPresent()) {
+        // Faza 6a sieci (patrz CoworkWithClaude/PLAN_networking.md): DHCP PRZED czymkolwiek
+        // innym w tym bloku - wypelnia NET_OUR_IP/NET_GATEWAY_IP (start: {0,0,0,0}), a
+        // wszystko nizej (w tym prewarm ARP) polega na tym ze sa juz prawdziwe.
+        DHCP::Run();
+        // Faza 3 sieci: prewarm ARP - poznaj MAC bramy zanim cokolwiek bedzie trzeba do
+        // niej wyslac (Faza 4+). Legalna, permanentna inicjalizacja stosu sieciowego, nie
+        // kod testowy - odpowiedz (jesli przyjdzie) zaloguje sie sama przez ARP::HandleFrame.
+        ARP::SendRequest(NET_GATEWAY_IP);
+    }
 
     // Phase 3 Initialization
     Scheduler::Init();

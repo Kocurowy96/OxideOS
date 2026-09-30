@@ -7,10 +7,10 @@
 // na ARP jak w "prawdziwych" stosach.
 class IP {
 public:
-    // protocol: 1=ICMP, 17=UDP, 6=TCP (przyszla faza).
+    // protocol: 1=ICMP, 6=TCP, 17=UDP.
     static bool Send(const uint8_t dst_ip[4], uint8_t protocol, const uint8_t* payload, uint16_t payload_len);
 
     // Parsuje naglowek IP (payload ramki Ethernet po odjeciu jej wlasnego naglowka) i
-    // rozdziela do wlasciwego protokolu wyzej (ICMP/UDP dzis, TCP w przyszlej fazie).
+    // rozdziela do wlasciwego protokolu wyzej (ICMP/UDP/TCP).
     static void HandleFrame(const uint8_t* data, uint16_t len);
 };
