@@ -27,6 +27,8 @@ rem stop - cloning below doesn't depend on it, and the packages might already be
 echo.
 echo === Installing build toolchain inside WSL ===
 echo You will be asked for your WSL/Linux sudo password below - this is normal.
+echo On Arch/pacman this also does a full "pacman -Syu" system update, not just these
+echo packages - that's Arch's own recommended way to avoid partial-upgrade breakage.
 echo.
 wsl bash -lc "if command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y git build-essential cmake xorriso qemu-system-x86 imagemagick e2fsprogs nasm mtools gdb python3; elif command -v pacman >/dev/null 2>&1; then sudo pacman -Syu --needed --noconfirm git base-devel cmake xorriso qemu-system-x86 imagemagick e2fsprogs nasm mtools gdb python; else echo 'WARNING: no supported package manager found (looked for apt-get, pacman) - skipping automatic install.' >&2; echo 'Install these manually for your distro: git, a C/C++ toolchain (gcc/make/binutils), cmake, xorriso, qemu-system-x86_64, ImageMagick, e2fsprogs (mke2fs/debugfs), nasm, mtools, gdb, python3.' >&2; fi"
 if errorlevel 1 (
@@ -35,9 +37,19 @@ if errorlevel 1 (
     exit /b 1
 )
 
-set "TARGET=%~dp0..\OxideOS"
+rem Default clone target: if this script is already sitting inside a real checkout
+rem (scripts\setup_windows.bat with a .git two levels up - e.g. you're re-running it
+rem from an existing clone to reinstall packages or pull), default to THAT checkout
+rem instead of cloning a second copy. Otherwise (script downloaded standalone before
+rem you had any clone at all - see README.md step 2) default to a plain, predictable
+rem location that doesn't depend on where you happened to save this file.
+set "DEFAULT_TARGET=%USERPROFILE%\OxideOS"
+if exist "%~dp0..\.git" (
+    for %%A in ("%~dp0..") do set "DEFAULT_TARGET=%%~fA"
+)
+set "TARGET=%DEFAULT_TARGET%"
 set /p "TARGET=Where should OxideOS be cloned? [%TARGET%] "
-if "%TARGET%"=="" set "TARGET=%~dp0..\OxideOS"
+if "%TARGET%"=="" set "TARGET=%DEFAULT_TARGET%"
 
 if exist "%TARGET%\.git" (
     echo.

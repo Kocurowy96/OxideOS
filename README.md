@@ -48,7 +48,8 @@ is ported — see the roadmap below).
 
 Requirements: `git`, `cmake`, `gcc`/`ld` (`build-essential` on Debian/Ubuntu), `xorriso`,
 `qemu-system-x86_64`, `ImageMagick`, `e2fsprogs` (`mke2fs`/`debugfs`), `nasm`, `mtools`
-(the last two build Limine itself from the vendored `limine-12.5.2/` source — see below).
+(the last two build Limine itself from the vendored `limine-12.5.2/` source — see below),
+`python3`. `gdb` is only needed for the optional `scripts/gdb_inspect.sh`.
 
 ```bash
 ./scripts/run.sh
@@ -82,17 +83,29 @@ Setup, once:
    [learn.microsoft.com/windows/wsl/install](https://learn.microsoft.com/windows/wsl/install)),
    then install a distro (e.g. Ubuntu) from the Microsoft Store, and finish its first-time
    setup (it asks you to pick a Linux username/password — that's separate from Windows).
-2. Run `scripts\setup_windows.bat` from a Windows Command Prompt. It detects whether your
-   default WSL distro uses `apt` (Debian/Ubuntu) or `pacman` (Arch) and installs the build
-   toolchain accordingly (`git`, a C/C++ toolchain, `cmake`, `xorriso`, `qemu-system-x86_64`,
-   ImageMagick, `e2fsprogs`, `nasm`, `mtools`, `gdb`, `python3` — you'll be prompted for your
-   WSL sudo password, that's expected), then clones OxideOS into a folder you pick (default:
-   next to the script). On any other distro it skips the automatic install and tells you
-   what to install by hand instead of failing on a package manager that isn't there. This
-   exists specifically so a fresh setup can't go half-right by someone cloning into the
-   wrong place or skipping a package — one script does both steps the same way every time.
-   Already have a manual WSL setup or a clone? Skip it and just make sure the packages above
-   are installed.
+2. Download **just one file**, `scripts/setup_windows.bat` — you don't have the repo yet at
+   this point, so you can't run a script that lives inside it. Either open
+   [this raw link](https://raw.githubusercontent.com/Kocurowy96/OxideOS/main/scripts/setup_windows.bat)
+   in a browser and "Save As", or from PowerShell:
+   ```powershell
+   curl.exe -o setup_windows.bat https://raw.githubusercontent.com/Kocurowy96/OxideOS/main/scripts/setup_windows.bat
+   ```
+   Save it anywhere (e.g. your Downloads folder) — where doesn't matter, see the next step.
+3. Run it (double-click it, or `setup_windows.bat` from a Command Prompt in the folder you
+   saved it to). It detects whether your default WSL distro uses `apt` (Debian/Ubuntu) or
+   `pacman` (Arch) and installs the build toolchain accordingly (`git`, a C/C++ toolchain,
+   `cmake`, `xorriso`, `qemu-system-x86_64`, ImageMagick, `e2fsprogs`, `nasm`, `mtools`,
+   `gdb`, `python3` — you'll be prompted for your WSL sudo password, that's expected), then
+   clones OxideOS into a folder you pick (default: `%USERPROFILE%\OxideOS`). On any other
+   distro it skips the automatic install and tells you what to install by hand instead of
+   failing on a package manager that isn't there. This exists specifically so a fresh setup
+   can't go half-right by someone cloning into the wrong place or skipping a package — one
+   script does both steps the same way every time, and downloading only this one file first
+   means there's no "clone with the wrong settings" step to get wrong before it even runs.
+   Already have a manual WSL setup or a clone? Skip steps 2-3 and just make sure the
+   packages above are installed — or run `scripts\setup_windows.bat` from inside your
+   existing clone any time to double-check the toolchain or pull the latest changes; it
+   detects it's already in a checkout and updates that one instead of cloning a second copy.
 
 Then, from a Windows Command Prompt / PowerShell in the cloned repo root:
 
