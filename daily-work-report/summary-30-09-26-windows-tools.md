@@ -5,10 +5,10 @@
 **Commit:** (patrz `git log` — commit tworzony razem z tym raportem)
 
 ## Zadanie
-Prośba Wiktora: zrobić windowsowe odpowiedniki wszystkich skryptów z `scripts/` (`.bat`),
-zaktualizować `README.md` o to co się na Windowsie otwiera/jak to uruchomić, dopisać
-dokumencik — i tym razem, bo Wiktor jest poza komputerem, zamiast tylko pushować na
-`main-0k7z9q` **otworzyć pull request do `main`** (merge zrobi sam z aplikacji mobilnej).
+Zrobić windowsowe odpowiedniki wszystkich skryptów z `scripts/` (`.bat`), zaktualizować
+`README.md` o to co się na Windowsie otwiera/jak to uruchomić, dopisać dokumencik — i tym
+razem, bo autor zgłoszenia jest poza komputerem, zamiast tylko pushować na `main-0k7z9q`
+**otworzyć pull request do `main`** (merge zrobi się z aplikacji mobilnej).
 
 ## Co zrobiono
 **Siedem plików `scripts/*.bat`** — po jednym na każdy istniejący `.sh`: `build.bat`,
@@ -64,7 +64,7 @@ otwarty punkt, nie ukryte założenie).
 
 ## Push
 Zmiany (`scripts/*.bat` ×7, `README.md`, `CoworkWithClaude/TASKS.md`, ten raport) pushnięte
-na `origin/main-0k7z9q`. **Tym razem, na wyraźną prośbę Wiktora (jest poza komputerem),
-otwarty też pull request `main-0k7z9q` → `main`** — merge zrobi sam z aplikacji mobilnej
-GitHuba, zamiast zwykłego "zostaje na branchu do ręcznego mergowania" używanego przez resztę
+na `origin/main-0k7z9q`. **Tym razem, na wyraźną prośbę (autor zgłoszenia jest poza
+komputerem), otwarty też pull request `main-0k7z9q` → `main`** — merge zrobi się z aplikacji
+mobilnej GitHuba, zamiast zwykłego "zostaje na branchu do ręcznego mergowania" używanego przez resztę
 tej sesji.
