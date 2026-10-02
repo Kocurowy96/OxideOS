@@ -8,6 +8,7 @@ where wsl >nul 2>nul
 if errorlevel 1 (
     echo ERROR: WSL not found. Install WSL2 first: https://learn.microsoft.com/windows/wsl/install
     echo Then re-run this script.
+    pause
     exit /b 1
 )
 
@@ -16,6 +17,7 @@ if errorlevel 1 (
     echo ERROR: WSL has no installed Linux distro yet.
     echo Run "wsl --install -d Ubuntu" first, finish its first-time setup ^(username/password^),
     echo then re-run this script.
+    pause
     exit /b 1
 )
 
@@ -34,6 +36,7 @@ wsl bash -lc "if command -v apt-get >/dev/null 2>&1; then sudo apt-get update &&
 if errorlevel 1 (
     echo ERROR: package install failed - see the output above ^(wrong sudo password,
     echo network issue, or a package name that doesn't match your distro's repos^).
+    pause
     exit /b 1
 )
 
@@ -58,16 +61,20 @@ if exist "%TARGET%\.git" (
     wsl bash -lc "git -C '!WSLTARGET!' pull"
     if errorlevel 1 (
         echo ERROR: git pull failed - see output above.
+        pause
         exit /b 1
     )
     echo.
     echo Done - %TARGET% updated to the latest main.
+    start "" explorer.exe "%TARGET%"
+    pause
     exit /b 0
 )
 
 if exist "%TARGET%" (
     echo ERROR: "%TARGET%" already exists and is not a git checkout - refusing to clone over it.
     echo Delete it or re-run and pick a different path.
+    pause
     exit /b 1
 )
 
@@ -78,9 +85,15 @@ echo === Cloning OxideOS into %TARGET% ===
 wsl bash -lc "git clone https://github.com/Kocurowy96/OxideOS '!WSLTARGET!'"
 if errorlevel 1 (
     echo ERROR: git clone failed - see output above.
+    pause
     exit /b 1
 )
 
 echo.
 echo Done. OxideOS is at %TARGET%
 echo Next: open a terminal in that folder and run scripts\run.bat
+rem Open it in Explorer so you can actually see where it landed - if this window was
+rem double-clicked rather than opened from an existing cmd, it closes the instant this
+rem script ends, and the path above scrolls away before anyone can read it.
+start "" explorer.exe "%TARGET%"
+pause
