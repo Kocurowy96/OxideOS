@@ -10,5 +10,12 @@ if errorlevel 1 (
     echo Then install the build toolchain inside your WSL distro - see README.md "Running on Windows".
     exit /b 1
 )
+rem cd to the repo root first - wsl maps its working directory from the CALLER's current
+rem Windows directory, not from where this .bat lives, so running it from inside scripts\
+rem (very easy to do, that's where the .bat files are) would otherwise look for
+rem scripts/scripts/run.sh inside WSL and fail with "No such file or directory".
+pushd "%~dp0.."
 wsl bash -lc "./scripts/run.sh"
-exit /b %errorlevel%
+set "RC=%errorlevel%"
+popd
+exit /b %RC%

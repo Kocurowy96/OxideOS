@@ -107,7 +107,9 @@ Setup, once:
    existing clone any time to double-check the toolchain or pull the latest changes; it
    detects it's already in a checkout and updates that one instead of cloning a second copy.
 
-Then, from a Windows Command Prompt / PowerShell in the cloned repo root:
+Then, from a Windows Command Prompt / PowerShell, either in the cloned repo root or inside
+its `scripts\` folder (each `.bat` first switches to the repo root itself, so either
+starting point works):
 
 ```bat
 scripts\run.bat
@@ -121,13 +123,16 @@ builds), exactly like running `./scripts/run.sh` directly in a Linux terminal.
 `-display none` (as their `.sh` counterparts do) and print PASS/FAIL or write a
 screenshot file — nothing opens on screen for those.
 
-Each `.bat` file just calls `wsl bash -lc "./scripts/<name>.sh ..."`, forwarding any
-arguments straight through, so paths for `headless_interact.bat`/`gdb_inspect.bat` should
-be given as WSL sees them (plain relative paths from the repo root, or `/mnt/c/...` for a
-Windows path) — they are not translated. **Not tested on a real Windows machine** — the
-`.sh` scripts themselves are unchanged and already verified, but running them through
-these wrappers hasn't been independently confirmed on Windows yet; if something doesn't
-work as documented here, please open an issue.
+Each `.bat` file `pushd`s to the repo root, then calls `wsl bash -lc "./scripts/<name>.sh
+..."`, forwarding any arguments straight through — so paths for
+`headless_interact.bat`/`gdb_inspect.bat` should be given as WSL sees them relative to the
+repo root (or `/mnt/c/...` for a Windows path), they are not translated. **Tested on a real
+Windows 11 machine for the first time on 2026-10-02**: running the `.bat` files from inside
+`scripts\` (rather than the repo root) failed with `No such file or directory`, because
+`wsl` maps its working directory from wherever the `.bat` was invoked, not from where the
+`.bat` file itself lives — fixed by having each wrapper switch to the repo root first.
+Re-verifying this fix on real Windows is still pending; if something else doesn't work as
+documented here, please open an issue.
 
 ## Project structure
 
