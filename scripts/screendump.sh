@@ -15,7 +15,11 @@ SERIAL_LOG=$(mktemp)
 PPM=$(mktemp /tmp/oxideos-shot-XXXXXX.ppm)
 
 QEMU_FLAGS="-m 512M -cdrom oxideos.iso -hda disk.img -boot d -serial file:$SERIAL_LOG -display none -qmp unix:$QMP_SOCK,server,nowait"
-if [ -e /dev/kvm ]; then
+# /dev/kvm moze istniec ale byc niedostepne dla biezacego uzytkownika (np. brak w grupie
+# "kvm" - zaobserwowane realnie na WSL2, "-e" samo w sobie nie wystarczylo i QEMU padal z
+# "Permission denied") - sprawdzamy faktyczna dostepnosc do odczytu/zapisu, nie sam fakt
+# istnienia pliku.
+if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
     QEMU_FLAGS="-enable-kvm $QEMU_FLAGS"
 fi
 

@@ -15,7 +15,11 @@ TIMEOUT="${1:-20}"
 NET_FLAGS="-netdev user,id=net0 -device rtl8139,netdev=net0 -object filter-dump,id=f1,netdev=net0,file=net_dump.pcap"
 
 QEMU_FLAGS="-m 512M -cdrom oxideos.iso -hda disk.img -boot d -serial stdio -display none $NET_FLAGS"
-if [ -e /dev/kvm ]; then
+# /dev/kvm moze istniec ale byc niedostepne dla biezacego uzytkownika (np. brak w grupie
+# "kvm" - zaobserwowane realnie na WSL2, "-e" samo w sobie nie wystarczylo i QEMU padal z
+# "Permission denied") - sprawdzamy faktyczna dostepnosc do odczytu/zapisu, nie sam fakt
+# istnienia pliku.
+if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
     QEMU_FLAGS="-enable-kvm $QEMU_FLAGS"
 fi
 
