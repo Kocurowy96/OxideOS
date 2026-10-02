@@ -14,6 +14,19 @@ cd "$(dirname "$0")/.."
 # (patrz limine-12.5.2/INSTALL.md) - bez tych flag "make install" nie dalby bootloaderow.
 if [ ! -f limine_dir/limine ] && [ ! -f limine_dir/bin/limine ]; then
     echo "Building Limine host tool + bootloader (bootstrap z limine-12.5.2/)..."
+    # Limine'owe configure buduje bootloader (CC_FOR_TARGET) wylacznie clangiem - zwykly
+    # gcc wystarcza na HOST tool, ale nie na ta czesc - bez tego sprawdzenia blad z configure
+    # ("clang invalid, set CC_FOR_TARGET...") jest kompletnie nieczytelny (zaobserwowane
+    # realnie na Windows/WSL Ubuntu 2026-10-02, gdzie `clang`/`lld`/`llvm` nie sa domyslnie
+    # zainstalowane mimo ze byly obecne w tym srodowisku deweloperskim).
+    if ! command -v clang >/dev/null 2>&1; then
+        echo "ERROR: 'clang' not found - Limine's build needs the LLVM toolchain (clang," >&2
+        echo "lld, llvm - not just gcc) to build its bootloader. Install it, e.g.:" >&2
+        echo "  sudo apt install clang lld llvm      (Debian/Ubuntu)" >&2
+        echo "  sudo pacman -S clang lld llvm        (Arch)" >&2
+        echo "then re-run this script." >&2
+        exit 1
+    fi
     (
         cd limine-12.5.2
         ./configure --prefix="$(pwd)/../limine_dir" \

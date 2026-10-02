@@ -47,9 +47,11 @@ is ported — see the roadmap below).
 ## Building and running
 
 Requirements: `git`, `cmake`, `gcc`/`ld` (`build-essential` on Debian/Ubuntu), `xorriso`,
-`qemu-system-x86_64`, `ImageMagick`, `e2fsprogs` (`mke2fs`/`debugfs`), `nasm`, `mtools`
-(the last two build Limine itself from the vendored `limine-12.5.2/` source — see below),
-`python3`. `gdb` is only needed for the optional `scripts/gdb_inspect.sh`.
+`qemu-system-x86_64`, `ImageMagick`, `e2fsprogs` (`mke2fs`/`debugfs`), `nasm`, `mtools`,
+`clang`, `lld`, `llvm` (the last five build Limine itself from the vendored
+`limine-12.5.2/` source — see below; Limine's own build needs `clang` specifically for its
+bootloader target even on a machine that already has `gcc`), `python3`. `gdb` is only
+needed for the optional `scripts/gdb_inspect.sh`.
 
 ```bash
 ./scripts/run.sh
@@ -95,7 +97,8 @@ Setup, once:
    saved it to). It detects whether your default WSL distro uses `apt` (Debian/Ubuntu) or
    `pacman` (Arch) and installs the build toolchain accordingly (`git`, a C/C++ toolchain,
    `cmake`, `xorriso`, `qemu-system-x86_64`, ImageMagick, `e2fsprogs`, `nasm`, `mtools`,
-   `gdb`, `python3` — you'll be prompted for your WSL sudo password, that's expected), then
+   `clang`, `lld`, `llvm`, `gdb`, `python3` — you'll be prompted for your WSL sudo password,
+   that's expected), then
    clones OxideOS into a folder you pick (default: `%USERPROFILE%\OxideOS`). On any other
    distro it skips the automatic install and tells you what to install by hand instead of
    failing on a package manager that isn't there. This exists specifically so a fresh setup
