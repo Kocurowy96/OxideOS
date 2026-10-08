@@ -38,17 +38,27 @@ Do przetestowania w prawdziwym GUI.
 
 ## Do zrobienia teraz
 
-*(puste — Faza 6c sieci (klient HTTP/1.0) ukończona 2026-09-26/27, w pełni zweryfikowana
-— zamyka cały zakres sieciowy zlecony na tę nocną sesję. Nowe pozycje dopisze Kocurowy96
-po przebudzeniu.)*
+- [ ] **Redesign assetów** — wbudowanie kluczowych plików (kursor, ikony) w binarkę kernela
+  zamiast ładowania z ext2 w runtime (patrz `podsumowanie_projektu.md` / decyzja z
+  2026-09-10). Dobrze opisane, wąskie, bez zależności od innych otwartych wątków.
+- [ ] **Menu Start: rekursywne submenu** dla podfolderów w `/usr/bin` (dziś płaska lista z
+  `VFS::ListDirectory` w `kernel/gui/compositor.cpp`, `RefreshStartMenu`) — do rozszerzenia
+  teraz, gdy jest realny podfolder do przetestowania (`pkgserver`/apki rosną).
+- [ ] **Formalny zestaw regresji UI** — spisać istniejące ad-hoc scenariusze
+  `headless_interact.sh` (klikanie Kalkulatora/WinVer/Ustawień/Kalendarza/Notatnika/
+  Menedżera Zadań, współrzędne liczone z `sys_create_window` + layoutu kontrolek, patrz
+  `docs/gui.md`) jako pliki w repo (np. `CoworkWithClaude/regression/scenario_<apka>.txt`)
+  zamiast wyliczać je od zera przy każdej sesji. Jeden scenariusz na apkę, uruchamiany jako
+  checklist przed większym mergem/milestone'em.
 
 ## Do przegadania
 
 - [ ] Klikanie w GUI (`mouse_clicked = mouse_left && !prev_mouse_left`, próbkowane raz na przebieg pętli renderowania kompozytora) staje się zawodne gdy otwartych jest więcej okien na raz (więcej do przerysowania → wolniejsza pętla → mniejsza szansa złapania krótkiego zbocza kliknięcia w oknie 0.15s) — zaobserwowane 2026-09-26 przy pełnym regresie Fazy 3c (test automatyczny przez `headless_interact.sh`/QMP, klik czasem "gubiony" przy 4-5 jednocześnie otwartych okitach, działa ponownie przy dłuższym odstępie między akcjami). Nie naprawiane teraz — obserwacja przy okazji niepowiązanej sesji, prawdziwy klik fizyczną myszą przez człowieka (dłuższy, mniej precyzyjny w czasie niż skryptowany 0.15s) prawdopodobnie nie odczuwa tego w praktyce, ale warto mieć na uwadze jeśli kiedyś pojawi się zgłoszenie "czasem trzeba kliknąć dwa razy".
-- [ ] **Biblioteka UI dla apek ("WinForms-lite") — status: praktyczny zakres planu zamknięty** — Fazy 1-4 (Kalkulator, WinVer + Ustawienia, Kalendarz, Notatnik + Menedżer Zadań) zrobione i zweryfikowane, patrz "Zrobione" niżej i `PLAN_ui_library.md`. Wszystkie apki z przyciskami/interakcją w `/usr/bin` są teraz na `Form`/`Control`. Nic nie czeka na start — to pozycja informacyjna, do usunięcia albo dopisania nowego zakresu (kolejna apka, jeśli powstanie) przy najbliższej wspólnej sesji.
-- [ ] **Sieć / TCP-IP stack — cały zlecony zakres tej nocnej sesji (Fazy 4-6c) ZROBIONY** — pełny rozpisany plan w `PLAN_networking.md`. Kamień milowy ICMP (Faza 4), UDP (Faza 5), DHCP (Faza 6a), TCP klient (Faza 6b), minimalny klient HTTP/1.0 (Faza 6c) — wszystko zrobione i zweryfikowane, patrz "Zrobione". **Faza 7 (syscalle/API dla aplikacji, żeby userspace mogło używać sieci) świadomie NIE zaczęta** — zbyt odległa, do zaprojektowania bliżej tej fazy, wymaga też decyzji o kształcie API (styl gniazd czy coś prostszego). To pozycja informacyjna/do przegadania o kolejnym kroku, nie "start" do samodzielnej kontynuacji.
-- [ ] Redesign assetów — wbudowanie kluczowych plików (kursor, ikony) w binarkę kernela zamiast ładowania z FAT32 w runtime (patrz `podsumowanie_projektu.md` / decyzja z 2026-09-10)
-- [ ] Menu Start: rekursywne submenu dla podfolderów w `/usr/bin` (dziś płaska lista — do rozszerzenia jak pojawi się realny podfolder do przetestowania)
+- [ ] **Sieć Faza 7 — syscalle/API żeby userspace mogło używać sieci**. Dziś cały stos
+  (ARP/IP/ICMP/UDP/DHCP/TCP/HTTP — patrz `docs/networking.md`) żyje tylko w kernelu,
+  wołany z tymczasowego kodu w `kernel/main.cpp`. Wymaga decyzji o kształcie API (styl
+  gniazd BSD-podobny vs. coś prostszego typu `sys_http_get`) zanim ruszy — stąd tutaj, nie
+  w "Do zrobienia teraz".
 - [ ] Skompilować i odpalić SerenityOS lokalnie (mamy klon w `.serenity/`) — rekonesans, jak wygląda dojrzały hobby-OS i jak Ladybird tam faktycznie działa
 - [ ] Realny model procesów z osobnymi tabelami stron per proces (dziś: jedna wspólna przestrzeń adresowa dla wszystkich tasków — zdiagnozowane 2026-09-11 przy okazji buga ze zniszczonymi oknami; per-task kernel stack już naprawiony, ale to kolejny krok w tym samym kierunku)
 - [ ] "Port debugowy" — pozostał tylko etap 4 (1, 2, 3 zrobione 2026-09-20, patrz "Zrobione" i `PLAN_scripty_i_debug.md`): nagrywanie ekranu — TYLKO lokalnie na maszynie roboczej (Garuda Linux/KWin/Wayland, ASUS TUF Gaming A15), nie w chmurze. Najmniej pilne, opcjonalne.
