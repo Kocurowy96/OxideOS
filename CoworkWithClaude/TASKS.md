@@ -50,10 +50,32 @@ Do przetestowania w prawdziwym GUI.
   `docs/gui.md`) jako pliki w repo (np. `CoworkWithClaude/regression/scenario_<apka>.txt`)
   zamiast wyliczać je od zera przy każdej sesji. Jeden scenariusz na apkę, uruchamiany jako
   checklist przed większym mergem/milestone'em.
+- [ ] **Biblioteka UI — Faza 5: Paint** — `apps/paint/main.c` jako jedyna pozostała apka z
+  przyciskami nadal ręcznie robi hit-testing w `OnMouseClick` (sprawdzone w kodzie, nie
+  zgadywane). Ten sam wzorzec co Kalendarz (Faza 3, patrz `docs/gui.md`): siatka 32×32
+  pikseli jako jedna kontrolka z własnym `ControlRenderFn` obsługującym kliki wewnątrz
+  siebie (jak planer notatek Kalendarza), przyciski palety kolorów/wyboru narzędzia jako
+  zwykłe `Control`e. Model zdarzeń się zgadza — Paint już dziś reaguje tylko na dyskretne
+  kliki (`GUI_EVENT_MOUSE_CLICK`), nie na ciągłe przeciąganie, więc nic nowego nie trzeba
+  dodawać do `widgets.c`.
+- [ ] **Drobny bug: Menedżer Zadań pokazuje pusty wiersz dla DesktopTask** — znaleziona
+  przyczyna: `Scheduler::CreateTask((void(*)(void*))DesktopTask, nullptr)` w
+  `kernel/main.cpp` przekazuje `nullptr`, a `Scheduler::CreateTask` (`kernel/proc/sched.cpp`,
+  ok. linii 74-79) używa tego samego `arg` do wypełnienia `Task::name` — stąd pusta nazwa.
+  Fix: przekazać `"Desktop"` zamiast `nullptr` (`DesktopTask` i tak nie używa swojego `arg`,
+  sprawdzone w `kernel/main.cpp`). Zweryfikować przez `headless_interact.sh` otwierającym
+  Menedżera Zadań.
+- [ ] **Zawodne klikanie przy wielu oknach — konkretna, zawężona poprawka** (obserwacja już
+  wcześniej w tym pliku, teraz z kierunkiem rozwiązania): `kernel/gui/compositor.cpp` ustawia
+  `mouse_clicked = mouse_left && !prev_mouse_left` raz na klatkę — przy wolniejszym renderze
+  (dużo okien) krótkie zbocze kliknięcia potrafi wypaść między próbkowaniami. Zamiast
+  jednoklatkowego porównania, zatrzasnąć wykryte zbocze na 2-3 kolejne klatki (prosty licznik
+  "pending click", kasowany po pierwszym faktycznym zużyciu w hit-teście). Zweryfikować tym
+  samym scenariuszem co przy oryginalnej obserwacji (Faza 3c ext2: 4-5 okien naraz,
+  `headless_interact.sh`) — klik nie powinien już ginąć.
 
 ## Do przegadania
 
-- [ ] Klikanie w GUI (`mouse_clicked = mouse_left && !prev_mouse_left`, próbkowane raz na przebieg pętli renderowania kompozytora) staje się zawodne gdy otwartych jest więcej okien na raz (więcej do przerysowania → wolniejsza pętla → mniejsza szansa złapania krótkiego zbocza kliknięcia w oknie 0.15s) — zaobserwowane 2026-09-26 przy pełnym regresie Fazy 3c (test automatyczny przez `headless_interact.sh`/QMP, klik czasem "gubiony" przy 4-5 jednocześnie otwartych okitach, działa ponownie przy dłuższym odstępie między akcjami). Nie naprawiane teraz — obserwacja przy okazji niepowiązanej sesji, prawdziwy klik fizyczną myszą przez człowieka (dłuższy, mniej precyzyjny w czasie niż skryptowany 0.15s) prawdopodobnie nie odczuwa tego w praktyce, ale warto mieć na uwadze jeśli kiedyś pojawi się zgłoszenie "czasem trzeba kliknąć dwa razy".
 - [ ] **Sieć Faza 7 — syscalle/API żeby userspace mogło używać sieci**. Dziś cały stos
   (ARP/IP/ICMP/UDP/DHCP/TCP/HTTP — patrz `docs/networking.md`) żyje tylko w kernelu,
   wołany z tymczasowego kodu w `kernel/main.cpp`. Wymaga decyzji o kształcie API (styl
