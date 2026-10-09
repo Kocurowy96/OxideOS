@@ -38,6 +38,49 @@ Do przetestowania w prawdziwym GUI.
 
 ## Do zrobienia teraz
 
+- [ ] **Zbadać i naprawić realny kernel panic (page fault) przy odpalaniu apek z Menu Start** —
+  zgłoszone 2026-10-09 przez Kocurowy96, prawdziwy crash na WSL2/Windows 11 przez
+  `scripts/run.sh` (nie wymyślony scenariusz testowy). Pełny log paniki:
+  ```
+  OxideOS: Kernel Panic! (OSOD)
+  Exception Number: 14
+  RIP: 0x400265
+  Error Code: 0x6
+  Halting.
+  ```
+  Kolejność zdarzeń z logu przed crashem (wszystko z Menu Start, w tej kolejności):
+  HELLO.ELF → SETTINGS.ELF → CALC.ELF → CLOCK.ELF → TASKMGR.ELF → **HELLO.ELF ponownie**
+  (drugie uruchomienie tej samej apki po tym jak pierwsza instancja już dawno zrobiła
+  `sys_exit`) → NOTEPAD.ELF, i w tym miejscu panika.
+  **Rozszyfrowane dane z panic handlera** (`kernel/cpu/isr.cpp`, `isr_handler`, `int_no < 32`):
+  Exception 14 = Page Fault. Error Code `0x6` = binarnie `110` → bit0 (P)=0 (strona
+  NIE jest obecna/zmapowana), bit1 (W/R)=1 (to był **zapis**, nie odczyt), bit2 (U/S)=1
+  (dostęp z **trybu użytkownika**, Ring 3). Czyli: zapis z Ring 3 do niezmapowanej strony.
+  RIP `0x400265` leży wewnątrz stałego adresu ładowania **HELLO.ELF** (`-Ttext 0x400000`,
+  patrz `scripts/build.sh`) — ciekawe, bo HELLO było uruchomione (i zakończone) wcześniej w
+  tym samym logu, a potem odpalone DRUGI raz tuż przed crashem.
+  **Pierwszy, tani krok zanim cokolwiek innego**: panic handler dziś loguje tylko
+  `Exception Number`/`RIP`/`Error Code` (patrz `kernel/cpu/isr.cpp` ok. linii 15-32) — przy
+  page fault brakuje najważniejszej informacji, **adresu który spowodował fault** (rejestr
+  `CR2`). Dopisać odczyt i wypisanie `CR2` (`asm volatile("mov %%cr2, %0" : "=r"(cr2))`) do
+  tej samej gałęzi `isr_handler` przy exception 14 — tani, bezpieczny, i natychmiast ułatwi
+  dalszą diagnozę tego i przyszłych page faultów.
+  **Dalej**: odtworzyć przez `scripts/headless_interact.sh` ze scenariuszem odwzorowującym
+  dokładnie tę sekwencję (otwarcie z Menu Start: HELLO, SETTINGS, CALC, CLOCK, TASKMGR,
+  HELLO ponownie, NOTEPAD — współrzędne ikon/pozycji liczone tak jak w innych scenariuszach,
+  patrz `docs/gui.md`), potwierdzić że panika odtwarza się tak samo (ten sam RIP/Error Code,
+  teraz też CR2), i zbadać przyczynę. **Najbardziej prawdopodobny trop** (już odnotowany w
+  "Do przegadania" niżej jako znane ograniczenie architektury): brak osobnych tabel stron
+  per proces — wszystkie taski dzielą jedną przestrzeń adresową, więc ponowne uruchomienie
+  HELLO.ELF (ten sam adres `0x400000` co za pierwszym razem) może kolidować z jeszcze nie
+  w pełni posprzątanym stanem po pierwszej instancji (stos, sterta, zwisający wskaźnik z
+  kompozytora/GUI). Nie zakładać tego z góry — potwierdzić empirycznie przez CR2 + stan
+  schedulera (`gdb_inspect.sh`: `info registers`, `bt`, zawartość struktur `Task`) zanim
+  ruszy się z poprawką. Jeśli faktycznie to ten sam problem co w "Do przegadania" (model
+  procesów), ocenić czy da się to naprawić punktowo (np. porządniejsze czyszczenie
+  stanu taska przy `sys_exit`/ponownym `ExecAppTask` tego samego pliku) bez pełnego,
+  dużego przeprojektowania na osobne tabele stron — to osobna, większa decyzja, zostawić
+  w "Do przegadania" jeśli się okaże że punktowa poprawka nie wystarczy.
 - [ ] **Menu Start: rekursywne submenu** dla podfolderów w `/usr/bin` (dziś płaska lista z
   `VFS::ListDirectory` w `kernel/gui/compositor.cpp`, `RefreshStartMenu`) — do rozszerzenia
   teraz, gdy jest realny podfolder do przetestowania (`pkgserver`/apki rosną).
