@@ -29,8 +29,14 @@ extern "C" Registers* isr_handler(Registers* regs) {
         SerialPort::WriteString(itoa(regs->rip, buf, 16));
         SerialPort::WriteString("\nError Code: 0x");
         SerialPort::WriteString(itoa(regs->err_code, buf, 16));
+        if (regs->int_no == 14) {
+            uint64_t cr2;
+            asm volatile("mov %%cr2, %0" : "=r"(cr2));
+            SerialPort::WriteString("\nCR2 (faulting address): 0x");
+            SerialPort::WriteString(itoa(cr2, buf, 16));
+        }
         SerialPort::WriteString("\nHalting.\n");
-        
+
         OSOD::Draw(regs);
         asm volatile("cli; hlt");
     }

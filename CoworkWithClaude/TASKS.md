@@ -81,6 +81,80 @@ Do przetestowania w prawdziwym GUI.
   stanu taska przy `sys_exit`/ponownym `ExecAppTask` tego samego pliku) bez pełnego,
   dużego przeprojektowania na osobne tabele stron — to osobna, większa decyzja, zostawić
   w "Do przegadania" jeśli się okaże że punktowa poprawka nie wystarczy.
+  **Postęp (2026-10-09, sesja automatyczna):** Zrobiony "pierwszy, tani krok" — `kernel/cpu/isr.cpp`
+  (`isr_handler`, gałąź `int_no == 14`) dopisuje teraz odczyt i log `CR2` (`mov %cr2, ...`) tuż
+  przed `OSOD::Draw`/`hlt`, dokładnie jak proponowano. Zweryfikowane: czysty rebuild, pełny
+  `scripts/test_headless.sh` dalej PASS (normalny rozruch bez panic).
+  **Panika ODTWORZONA headless** przez `scripts/headless_interact.sh` ze scenariuszem: zamknięcie
+  startowego okienka HELLO (klik OK → `sys_exit`), potem z Menu Start po kolei SETTINGS, CALC,
+  CLOCK, TASKMGR, HELLO (drugi raz, zostawione otwarte — okienko "Witaj w OxideOS!" nie zamknięte),
+  NOTEPAD — żadna z otwartych apek nie była zamykana po drodze (tak jak w oryginalnym zgłoszeniu,
+  które też nie wspomina zamykania okien). Wynik: **Exception 14, RIP `0x400261`, Error Code `0x4`,
+  CR2 `0x1028`** — bardzo blisko oryginalnego zgłoszenia (RIP `0x400265`/Error Code `0x6`), nie
+  identycznie (tu: odczyt, nie zapis), ale ten sam charakter buga i ten sam obszar RIP — więc
+  potwierdzone, że to realna, odtwarzalna klasa błędu, nie przypadek.
+  **Najbardziej prawdopodobny trop z poprzedniej notatki OBALONY przez czytanie kodu, nie
+  zgadywanie:** `scripts/build.sh` linkuje KAŻDĄ apkę pod INNYM stałym adresem (`-Ttext`: HELLO
+  `0x400000`, SETTINGS `0x500000`, CALC `0x600000`, ..., NOTEPAD `0xB00000`, TASKMGR `0xC00000` —
+  nie wszystkie pod `0x400000` jak zakładała poprzednia notatka). Stosy userspace też dostają
+  unikalny adres wirtualny per uruchomienie (`kernel/main.cpp`, `ExecAppTask`, licznik statyczny
+  `next_stack` odejmujący `0x10000` za każdym razem — kod ma tam wprost komentarz tłumaczący
+  dlaczego, z 2026-09-11/wcześniej). Czyli zwykła kolizja "ten sam adres wirtualny dla dwóch
+  różnych apek" jest WYKLUCZONA jako mechanizm — `VMM::MapPage` (`kernel/mem/vmm.cpp`) faktycznie
+  bezwarunkowo nadpisuje wpis w tablicy stron bez żadnego sprawdzenia kolizji (potwierdzone w
+  kodzie, jeden wspólny `kernel_pml4` dla całego systemu — zgodne ze znanym ograniczeniem
+  architektury), ale przy odrębnych bazach adresowych per apka to się po prostu nie uruchamia w
+  tym konkretnym scenariuszu.
+  **Co faktycznie wskazują dane:** RIP `0x400261` leży w zakresie **HELLO.ELF** (`0x400000`+) —
+  czyli w momencie paniki wykonywany był kod DRUGIEJ, wciąż żywej (nieotwarte okienko) instancji
+  HELLO, nie NOTEPAD (który jest pod `0xB00000` i którego log `ExecAppTask: Loaded` pojawił się
+  jako ostatnia linia tuż przed panic — ale przez scheduler z preempcją to mógł być zbieg w
+  czasie, nie przyczyna). CR2 `0x1028` to bardzo mały adres (blisko NULL) — klasyczny wzorzec
+  "dereferencja NULL/zepsutego wskaźnika + offset do pola struktury", nie literalna kolizja
+  adresów wirtualnych.
+  **Czego NIE zdążono w tej sesji (jasno zostawione do kontynuacji):** nie użyto jeszcze
+  `scripts/gdb_inspect.sh` do złapania stanu "na gorąco" w momencie paniki (zarejestrów/`bt`/
+  struktur `Task`) żeby potwierdzić, który dokładnie task/funkcja wykonywał się przy CR2 `0x1028`
+  — `gdb_inspect.sh` w obecnej formie nie wspiera sterowania myszą w trakcie sesji GDB, więc
+  połączenie "odtwórz dokładny scenariusz klikania + złap stan po panice przez GDB" wymaga
+  małego dodatkowego skryptu (QEMU z `-s` bez `-S` + wysłanie tej samej sekwencji klików przez
+  `qmp_input.py` co w `headless_interact.sh`, a potem `gdb` po tym jak log serialowy pokaże
+  "Halting."), czego nie było w tej sesji jak zrobić bezpiecznie bez przekraczania zakresu
+  jednego, dokończonego kawałka pracy. Scenariusz powtarzalny do użycia w kolejnej sesji
+  (współrzędne liczone dla rozdzielczości auto-wykrywanej przez `qmp_input.py`, Start = `(20,
+  screen_h-10)`, pozycje pozycji Menu Start = `(100, menu_y+16+i*24)` dla i-tej pozycji w
+  kolejności HELLO/SETTINGS/CALC/PAINT/CALENDAR/WINVER/CLOCK/NOTEPAD/TASKMGR, `menu_y = screen_h
+  - 24 - max(100, 8+9*24)`):
+  ```
+  click left 513 478        # zamknij startowe okienko HELLO (OK) -> sys_exit
+  wait 1
+  click left 20 790         # Start
+  wait 1
+  click left 100 592        # SETTINGS
+  wait 2
+  click left 20 790
+  wait 1
+  click left 100 616        # CALC
+  wait 2
+  click left 20 790
+  wait 1
+  click left 100 712        # CLOCK
+  wait 2
+  click left 20 790
+  wait 1
+  click left 100 760        # TASKMGR
+  wait 2
+  click left 20 790
+  wait 1
+  click left 100 568        # HELLO (drugi raz, zostaw otwarte)
+  wait 2
+  click left 20 790
+  wait 1
+  click left 100 736        # NOTEPAD
+  wait 2
+  ```
+  (współrzędne liczone dla 1280×800 — przy innej rozdzielczości przeliczyć wg wzoru wyżej).
+  Pełny log z tej sesji w `daily-work-report/summary-09-10-26-*.md`.
 - [ ] **Menu Start: rekursywne submenu** dla podfolderów w `/usr/bin` (dziś płaska lista z
   `VFS::ListDirectory` w `kernel/gui/compositor.cpp`, `RefreshStartMenu`) — do rozszerzenia
   teraz, gdy jest realny podfolder do przetestowania (`pkgserver`/apki rosną).
