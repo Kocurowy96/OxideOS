@@ -1,6 +1,7 @@
 #include "compositor.h"
 #include "fb.h"
 #include "bmp.h"
+#include "embedded_assets.h"
 #include "../cpu/syscall.h"
 #include "../drivers/ps2_mouse.h"
 #include "../drivers/ac97.h"
@@ -195,23 +196,12 @@ void Compositor::InitWallpaper() {
 void Compositor::Init() {
     InitWallpaper();
 
-    uint8_t* buffer = nullptr;
-    uint32_t size = 0;
-    if (VFS::ReadFile("/icon.bmp", &buffer, &size)) {
-        icon_bmp = buffer;
-        SerialPort::WriteString("Compositor: Loaded icon.bmp from VFS!\n");
-    } else {
-        SerialPort::WriteString("Compositor: Failed to load icon.bmp from VFS.\n");
-    }
+    // Cursor and generic window icon are baked into the kernel binary (see
+    // kernel/gui/embedded_assets.h) instead of loaded from ext2 at runtime,
+    // so the GUI always has them even if disk.img is missing or fails to mount.
+    icon_bmp = EmbeddedAssets::icon_bmp;
+    cursor_bmp = EmbeddedAssets::cursor_normal_bmp;
 
-    uint8_t* cur_buf = nullptr;
-    uint32_t cur_size = 0;
-    if (VFS::ReadFile("/cursor_normal.bmp", &cur_buf, &cur_size)) {
-        cursor_bmp = cur_buf;
-        SerialPort::WriteString("Compositor: Loaded cursor_normal.bmp from VFS!\n");
-    } else {
-        SerialPort::WriteString("Compositor: Failed to load cursor_normal.bmp from VFS.\n");
-    }
     uint8_t* speaker_buf = nullptr;
     uint32_t speaker_size = 0;
     if (VFS::ReadFile("/icon_speaker.bmp", &speaker_buf, &speaker_size)) {

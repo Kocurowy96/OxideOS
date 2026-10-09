@@ -56,6 +56,7 @@ set(KERNEL_SOURCES
     kernel/mem/vmm.cpp
     kernel/gui/fb.cpp
     kernel/gui/bmp.cpp
+    kernel/gui/embedded_assets.cpp
     kernel/gui/window.cpp
     kernel/gui/apps.cpp
     kernel/gui/compositor.cpp

@@ -23,7 +23,6 @@ limine-12.5.2/tools-build/
 .serenity/
 disk.img
 *.iso
-/icon.bmp
 *.wav
 qemu_audio.wav
 net_dump.pcap

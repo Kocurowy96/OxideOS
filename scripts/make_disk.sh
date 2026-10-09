@@ -89,30 +89,10 @@ rm -f disk.img
 dd if=/dev/zero of=disk.img bs=1M count=64 2>/dev/null
 mke2fs -q -t ext2 -b 4096 -F disk.img
 
-# Fallback: wygenerowana ikona 16x16 (bez zmian tresci wzgledem starego skryptu) -
-# musi powstac PRZED zbudowaniem listy komend debugfs nizej, zeby "write icon.bmp"
-# mialo co skopiowac.
-python3 -c "
-import struct
-width, height = 16, 16
-with open('icon.bmp', 'wb') as f:
-    f.write(b'BM')
-    f.write(struct.pack('<I', 54 + width * height * 3))
-    f.write(b'\x00\x00\x00\x00')
-    f.write(struct.pack('<I', 54))
-    f.write(struct.pack('<I', 40))
-    f.write(struct.pack('<I', width))
-    f.write(struct.pack('<I', height))
-    f.write(struct.pack('<H', 1))
-    f.write(struct.pack('<H', 24))
-    f.write(b'\x00' * 24)
-    for y in range(height):
-        for x in range(width):
-            if x == 0 or x == 15 or y == 0 or y == 15:
-                f.write(b'\xff\xff\xff')
-            else:
-                f.write(b'\x00\x00\xff')
-"
+# icon.bmp nie jest juz generowany/kopiowany tutaj - od "Redesign assetow"
+# (CoworkWithClaude/TASKS.md, Zrobione) generyczna ikonka okna jest wbudowana
+# w binarke kernela (kernel/gui/embedded_assets.cpp), kernel przestal ja
+# wczytywac z dysku w runtime (patrz Compositor::Init w kernel/gui/compositor.cpp).
 
 # Budujemy plik komend dla `debugfs -w -f` (jeden proces zamiast osobnego wywolania
 # na kazdy plik/katalog) - `write <host> <obraz>` to odpowiednik `mcopy`, `mkdir` to
@@ -184,8 +164,6 @@ fi
 if [ -f iso_root/DOCS/CONFIG.DAT ]; then
     add_write "iso_root/DOCS/CONFIG.DAT" "/DOCS/CONFIG.DAT"
 fi
-
-add_write "icon.bmp" "/icon.bmp"
 
 # Miniatura tapety #1 do Panelu Sterowania - assets/wp1_thumb.bmp powstaje jako
 # efekt uboczny petli konwersji PNG->BMP wyzej (wp1_thumb.png), wiec o tym momencie

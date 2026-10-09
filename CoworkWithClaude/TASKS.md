@@ -38,9 +38,6 @@ Do przetestowania w prawdziwym GUI.
 
 ## Do zrobienia teraz
 
-- [ ] **Redesign assetów** — wbudowanie kluczowych plików (kursor, ikony) w binarkę kernela
-  zamiast ładowania z ext2 w runtime (patrz `podsumowanie_projektu.md` / decyzja z
-  2026-09-10). Dobrze opisane, wąskie, bez zależności od innych otwartych wątków.
 - [ ] **Menu Start: rekursywne submenu** dla podfolderów w `/usr/bin` (dziś płaska lista z
   `VFS::ListDirectory` w `kernel/gui/compositor.cpp`, `RefreshStartMenu`) — do rozszerzenia
   teraz, gdy jest realny podfolder do przetestowania (`pkgserver`/apki rosną).
@@ -87,6 +84,24 @@ Do przetestowania w prawdziwym GUI.
 
 ## Zrobione
 
+- [x] (2026-10-09) **Redesign assetów — kursor i ikonka okna wbudowane w binarkę kernela**.
+  `Compositor::Init()` (`kernel/gui/compositor.cpp`) nie woła już `VFS::ReadFile("/icon.bmp", ...)`
+  ani `VFS::ReadFile("/cursor_normal.bmp", ...)` w runtime — zamiast tego od razu przypisuje
+  `icon_bmp`/`cursor_bmp` na statyczne tablice bajtów wbudowane w `kernel/gui/embedded_assets.cpp`
+  (nowy plik, dodany do `CMakeLists.txt`), wygenerowane dokładnie tymi samymi komendami co
+  wcześniej budowały `icon.bmp`/`cursor_normal.bmp` na dysku (python fallback z
+  `scripts/make_disk.sh` dla ikonki, `convert .../cursor_normal.png -define bmp:format=bmp3
+  -define bmp3:alpha=true` dla kursora — dokładna procedura regeneracji opisana w
+  `kernel/gui/embedded_assets.h`). GUI ma teraz kursor/ikonę okna nawet gdyby ext2/disk.img
+  nie zamontowało się poprawnie. Przy okazji: `scripts/make_disk.sh` przestał generować i
+  kopiować `icon.bmp` na dysk (nic go już nie czyta), `.gitignore` nie wymienia już
+  `/icon.bmp`. `icon_speaker.bmp` (dymek głośnika w tray) zostawiony bez zmian — to osobny,
+  obecnie i tak niedostarczany asset, poza wąskim zakresem tego zadania.
+  Weryfikacja: czysty `rm -rf build && cmake -B build -S . && cmake --build build` bez
+  błędów. `scripts/test_headless.sh 25` → **PASS** (Ext2 init OK, brak panic, brak hangu).
+  Dodatkowo `scripts/screendump.sh` — zrzut ekranu wizualnie potwierdza strzałkę kursora w
+  lewym górnym rogu i czerwoną ikonkę w pasku tytułu okna powitalnego, identyczne jak przed
+  zmianą (ta sama logika generowania kolorów, tylko przeniesiona z dysku do binarki).
 - [x] (2026-10-02) **Dwa kolejne realne błędy zgłoszone z Discorda (trzeci tester, bebasowypl) — brak dostępu do KVM na WSL2 wysadzał QEMU + "nie mam folderu po instalacji"**: zrzut ekranu z Discorda pokazał `qemu-system-x86_64: Could not access KVM kernel module: Permission denied` zaraz po `OxideOS ISO generated...`/`Starting QEMU...`, plus wcześniejszą skargę "zainstalowało się ale nie mam tego folderu wogóle".
   **Błąd #1 (KVM)**: `scripts/run.sh` miał `-enable-kvm` NA SZTYWNO, bez żadnego sprawdzenia — jedyny z czterech skryptów odpalających QEMU bez zabezpieczenia. Pozostałe trzy (`test_headless.sh`/`screendump.sh`/`headless_interact.sh`) sprawdzały tylko **istnienie** `/dev/kvm` (`-e`), nie faktyczne uprawnienia — a to dokładnie ten przypadek: plik istnieje, ale użytkownik nie ma do niego dostępu (typowe na WSL2, brak w grupie `kvm`). Naprawione we wszystkich czterech: sprawdzenie zmienione na `[ -r /dev/kvm ] && [ -w /dev/kvm ]` (faktyczna dostępność do odczytu/zapisu), `run.sh` dostał to sprawdzenie po raz pierwszy z czytelnym komunikatem "QEMU odpali się bez akceleracji KVM" zamiast crashować.
   **Błąd #2 (zgubiony folder)**: `scripts/setup_windows.bat` nie miał `pause` na końcu — przy uruchomieniu przez dwuklik (dokładnie tak jak sugerowało README: "double-click it") okno `cmd` zamyka się NATYCHMIAST po zakończeniu skryptu, więc finałowy komunikat "Done. OxideOS is at ..." nigdy nie został przeczytany. Naprawione: `pause` dodany na KAŻDEJ ścieżce wyjścia (sukces i błąd), plus automatyczne otwarcie sklonowanego folderu w Eksploratorze (`start "" explorer.exe "%TARGET%"`) na końcu — żeby nie trzeba było w ogóle czytać ścieżki z konsoli. Ten sam wzorzec "pauza tylko przy błędzie" dodany też do wszystkich siedmiu `.bat`-wrapperów (`build.bat` itd.) — błąd (jak ten KVM) teraz zostaje na ekranie zamiast znikać razem z zamykającym się oknem przy dwukliku.
