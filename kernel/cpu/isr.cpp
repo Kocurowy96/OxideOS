@@ -29,6 +29,13 @@ extern "C" Registers* isr_handler(Registers* regs) {
         SerialPort::WriteString(itoa(regs->rip, buf, 16));
         SerialPort::WriteString("\nError Code: 0x");
         SerialPort::WriteString(itoa(regs->err_code, buf, 16));
+        // RSP/CS w momencie faultu - przy page faulcie w kodzie liczacym offset wzgledem
+        // wlasnego stosu (np. "mov 0x4(%rsp),%eax") sam CR2 nie mowi czy winny jest
+        // zepsuty wskaznik/offset czy RSP (patrz notatka w TASKS.md) - RSP rozstrzyga.
+        SerialPort::WriteString("\nRSP: 0x");
+        SerialPort::WriteString(itoa(regs->rsp, buf, 16));
+        SerialPort::WriteString("\nCS: 0x");
+        SerialPort::WriteString(itoa(regs->cs, buf, 16));
         if (regs->int_no == 14) {
             uint64_t cr2;
             asm volatile("mov %%cr2, %0" : "=r"(cr2));

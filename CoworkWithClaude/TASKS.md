@@ -155,6 +155,64 @@ Do przetestowania w prawdziwym GUI.
   ```
   (współrzędne liczone dla 1280×800 — przy innej rozdzielczości przeliczyć wg wzoru wyżej).
   Pełny log z tej sesji w `daily-work-report/summary-09-10-26-*.md`.
+  **Postęp (2026-10-12, sesja automatyczna):** Zrobiony zapowiedziany "kolejny krok" — napisany
+  nowy, wielorazowy skrypt `scripts/click_gdb_inspect.sh` (ten sam wzorzec co
+  `headless_interact.sh`/`gdb_inspect.sh`, połączony: klikanie przez QMP + GDB stub `-s` w JEDNYM
+  uruchomieniu QEMU, czeka na `"Halting."` w logu serialowym przed dołączeniem GDB, żeby złapać
+  faktycznie zatrzymany proces). Użyty do odtworzenia tego samego scenariusza z GDB podłączonym.
+  Dodatkowo `kernel/cpu/isr.cpp` dostał dwa kolejne, tanie pola w logu paniki: `RSP` i `CS` w
+  momencie faultu (oprócz już istniejącego `CR2`) — potrzebne, bo sam `CR2` nie mówi, czy winny
+  jest zepsuty wskaźnik/offset czy sam rejestr `RSP`.
+  **Co nowego pokazały dane (4 niezależne odtworzenia tego samego scenariusza klikania,
+  2026-10-12):** Hipoteza z poprzedniej notatki ("zepsuty/zwisający wskaźnik + offset pola
+  struktury") okazuje się NIEPEŁNA — dane są niespójne z prostym "jeden rejestr się psuje za
+  każdym razem tak samo":
+  - Przegląd `tasks[]` przez GDB (dla tej konkretnej, drugiej instancji HELLO, potwierdzonej po
+    `id`/nazwie w strukturze `Task`) pokazał, że jej OSTATNIO ZAPISANY (przez
+    `Scheduler::Schedule`) stan to adres KERNELOWY (`Framebuffer::Clear`), z poprawnym,
+    sensownym `RSP` (`0xffff8000...`, zakres HHDM) — czyli stan zapisany przy OSTATNIM
+    przełączeniu kontekstu przez scheduler jest zdrowy; korupcja nie siedzi w `tasks[]`.
+  - Statyczny disassembly (`objdump -d HELLO.ELF`) pokazuje, że RIP z paniki NIE jest stały:
+    w różnych powtórzeniach tego samego klikania wylądował albo na `0x400261`
+    (`mov 0x4(%rsp),%eax` — zwykła zmienna lokalna licznika w pętli opóźnienia
+    `for(i=0;i<=9999;i++)`, część `apps/libgui`), albo na `0x40041e` — co jest adresem
+    instrukcji `ret` TUŻ PO `int $0x80` wewnątrz `sys_get_event` (czyli: fault zaraz PO
+    powrocie ze syscalla, przy pierwszej instrukcji dotykającej stosu). To wskazuje na ścieżkę
+    POWROTU ZE SYSCALLA (`isr_common_stub` w `kernel/cpu/interrupts.S`: pop wszystkiego +
+    `iretq`) jako najbardziej prawdopodobne miejsce, gdzie `RSP` taska dostaje złą wartość —
+    nie na konkretne miejsce w kodzie HELLO/libgui (które jest tylko tam, gdzie problem
+    *ujawnia się*, nie gdzie powstaje).
+  - **Ważna niespójność, uczciwie odnotowana, nierozwiązana w tej sesji:** zgodnie z
+    architekturą x86 `CR2` przy page-faulcie MUSI być dokładnie adresem efektywnym faultującej
+    instrukcji. Dla `mov 0x4(%rsp),%eax` to musi być `RSP+4`, dla `ret` to musi być `RSP`.
+    W żadnym z 4 odtworzeń zalogowany `CR2` nie zgadzał się z tą matematyką względem
+    zalogowanego `RSP` (np. `RSP=0x6ffffffaffd8` + `CR2=0x205a`, albo `RSP=0x6ffffffaffd0` +
+    `CR2=0x0`) — mimo że układ stosu w `isr_common_stub`/`Registers` zweryfikowany bajt-po-bajcie
+    (offsety pól 1:1 z kolejnością `pushq` w asm) i wygląda poprawnie. Najbardziej prawdopodobne
+    wyjaśnienie (NIE potwierdzone empirycznie w tej sesji — do zbadania dalej): albo
+    **przepełnienie per-taskowego stosu jądra** (`kernel_stack_top`, 8 stron/32KiB,
+    `kernel/proc/sched.cpp` `CreateTask`) nadpisujące już odłożoną na stosie ramkę przerwania
+    z wcześniejszego, zagnieżdżonego zdarzenia, albo subtelny błąd w synchronizacji
+    `GDT::SetTSSStack`/`TSS.rsp0` względem FAKTYCZNIE wykonywanego taska w momencie tego
+    konkretnego (drugiego, zagnieżdżonego) faultu. Innymi słowy: korupcja raczej nie jest
+    pojedynczym, deterministycznym "stały offset w stały adres" bugiem (stąd zmienny RIP/CR2
+    między powtórzeniami) — wygląda na zależną od czasowania (ile razy coś zdążyło się wykonać/
+    przeplanować) kondycję wyścigu lub przepełnienie, nie prosty literal.
+  **Dlaczego NIE podjęta próba poprawki punktowej w tej sesji:** zgodnie z własnym zapisem
+  zadania ("ocenić czy da się to naprawić punktowo... zostawić w Do przegadania jeśli się okaże
+  że punktowa poprawka nie wystarczy") — przy sprzecznych/niedeterministycznych danych (RIP i
+  relacja CR2↔RSP różne w każdym powtórzeniu) nie ma jeszcze jednoznacznie zidentyfikowanego,
+  pojedynczego miejsca do poprawienia; ryzyko wprowadzenia poprawki "na pewną hipotezę" która
+  nie trafia w prawdziwą przyczynę jest wysokie. Zostaje w "Do zrobienia teraz", nie w
+  "Do przegadania" — to wciąż punktowe dochodzenie (logowanie diagnostyczne), nie decyzja
+  architektoniczna.
+  **Konkretny następny krok dla kolejnej sesji:** rozbudować log w `kernel/cpu/isr.cpp` (gałąź
+  `int_no==14`) o jawne porównanie `CR2` z `RSP` (np. wypisać `CR2 - RSP` jako liczbę ze
+  znakiem) oraz o zrzut granic stosu jądra biežącego taska (`kernel_stack_top` vs biežące `RSP`
+  jądra w momencie wejścia do `isr_handler`, nie taska) — to odróżni "przepełnienie stosu jądra"
+  od "coś zepsuło TSS.rsp0" empirycznie, bez zgadywania. `scripts/click_gdb_inspect.sh` i
+  scenariusz klikania (zapisany wyżej) są gotowe do ponownego użycia bez zmian.
+  Pełny log z tej sesji w `daily-work-report/summary-12-10-26-*.md`.
 - [ ] **Menu Start: rekursywne submenu** dla podfolderów w `/usr/bin` (dziś płaska lista z
   `VFS::ListDirectory` w `kernel/gui/compositor.cpp`, `RefreshStartMenu`) — do rozszerzenia
   teraz, gdy jest realny podfolder do przetestowania (`pkgserver`/apki rosną).
