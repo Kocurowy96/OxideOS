@@ -148,3 +148,8 @@ uint64_t Scheduler::GetCurrentTaskId() {
     if (current_task == -1) return 0;
     return tasks[current_task].id;
 }
+
+uint64_t Scheduler::GetCurrentKernelStackTop() {
+    if (current_task == -1) return 0;
+    return tasks[current_task].kernel_stack_top;
+}

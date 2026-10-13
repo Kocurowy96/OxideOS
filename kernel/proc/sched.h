@@ -26,6 +26,11 @@ public:
     static int GetTasks(TaskInfo* buffer, int max_count);
     static bool KillTaskById(uint64_t id);
     static uint64_t GetCurrentTaskId();
+
+    // Dla panic handlera (isr.cpp, int_no==14): oczekiwany gorny adres stosu jadra
+    // biezacego taska, zeby porownac z tym co faktycznie jest w TSS.rsp0 (GDT::GetTSSStack)
+    // - rozni sie, to synchronizacja TSS.rsp0 jest zepsuta, nie przepelnienie stosu.
+    static uint64_t GetCurrentKernelStackTop();
 };
 
 extern "C" void SwitchToUserMode(uint64_t entry, uint64_t stack);

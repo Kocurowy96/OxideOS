@@ -48,6 +48,7 @@ class GDT {
 public:
     static void Init();
     static void SetTSSStack(void* stack);
+    static uint64_t GetTSSStack();
 private:
     static void SetGate(int num, uint64_t base, uint64_t limit, uint8_t access, uint8_t gran);
     static void SetTSSGate(int num, uint64_t base, uint64_t limit, uint8_t access, uint8_t gran);

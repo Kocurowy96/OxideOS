@@ -60,3 +60,7 @@ void GDT::Init() {
 void GDT::SetTSSStack(void* stack) {
     tss.rsp0 = (uint64_t)stack;
 }
+
+uint64_t GDT::GetTSSStack() {
+    return tss.rsp0;
+}

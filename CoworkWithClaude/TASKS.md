@@ -213,6 +213,61 @@ Do przetestowania w prawdziwym GUI.
   od "coś zepsuło TSS.rsp0" empirycznie, bez zgadywania. `scripts/click_gdb_inspect.sh` i
   scenariusz klikania (zapisany wyżej) są gotowe do ponownego użycia bez zmian.
   Pełny log z tej sesji w `daily-work-report/summary-12-10-26-*.md`.
+  **Postęp (2026-10-13, sesja automatyczna):** Zrobiony zapowiedziany "konkretny następny krok" —
+  `kernel/cpu/isr.cpp` (`int_no==14`) dostał cztery nowe pola w logu paniki: `CR2 - RSP` (ze
+  znakiem), `Kernel RSP (isr_handler entry)` (to dokładnie `regs` — `isr_common_stub` robi
+  `movq %rsp, %rdi` tuż przed `call isr_handler`, więc wskaźnik przekazany jako argument JEST
+  bieżącym RSP stosu jądra w tym momencie, żadny dodatkowy `asm` nie był potrzebny),
+  `Kernel stack top (expected, current task)` (nowy `Scheduler::GetCurrentKernelStackTop()`,
+  `kernel/proc/sched.h`/`.cpp`) i `TSS.rsp0 (actual, hardware)` (nowy `GDT::GetTSSStack()`,
+  `kernel/cpu/gdt.h`/`.cpp`). Zweryfikowane: czysty rebuild, `scripts/test_headless.sh` dalej
+  PASS (normalny rozruch bez panic).
+  **Dwa niezależne odtworzenia tym samym scenariuszem klikania (`scripts/click_gdb_inspect.sh`,
+  scenariusz zapisany wyżej w tym pliku) dały jednoznaczną odpowiedź na pytanie z poprzedniej
+  sesji — TO NIE jest ani przepełnienie stosu jądra, ani rozjazd TSS.rsp0:**
+  - Przebieg 1: `RIP 0x400261, Error Code 0x4, RSP 0x6ffffffaffd8, CR2 0x118a`, `Kernel RSP
+    (isr_handler entry) 0xffff800002769f50`, `Kernel stack top 0xffff80000276a000` (różnica
+    tylko `0xb0`/176 bajtów od szczytu — stos jądra praktycznie nienaruszony, daleko od dna
+    `0xffff800002762000`), `TSS.rsp0 (actual) 0xffff80000276a000` — **identyczne** z oczekiwanym
+    `kernel_stack_top`, czyli zero rozjazdu synchronizacji.
+  - Przebieg 2: `RIP 0x40041e, Error Code 0x4, RSP 0x6ffffffaffd0, CR2 0x0`, te same
+    `Kernel RSP`/`kernel_stack_top`/`TSS.rsp0` jak w przebiegu 1 (co już samo w sobie pokazuje,
+    że to zawsze ten sam, jeden konkretny task aktywny w momencie paniki — zgodne z wcześniejszą
+    obserwacją, że żywa jest druga instancja HELLO).
+  **Nowa, mocniejsza niespójność odkryta przy tej okazji (ważniejsza niż "przepełnienie/TSS"):**
+  dla OBU przebiegów zalogowany `CR2` jest matematycznie NIEMOŻLIWY względem zalogowanego
+  `RIP`/`RSP` — sprawdzone przez `objdump -d HELLO.ELF`: w przebiegu 1 `RIP 0x400261` to
+  `mov eax, DWORD PTR [rsp+0x4]` (`8b 44 24 04`), czyli CR2 MUSI z architektury x86 być równe
+  `RSP+4 = 0x6ffffffaffdc` — zalogowane `CR2 0x118a` to z tym niezgodne o `~0x6ffffffaee4e`
+  (nowe pole `CR2 - RSP` właśnie to policzyło). W przebiegu 2 `RIP 0x40041e` to `ret` tuż po
+  `int 0x80` w `sys_get_event` (`apps/libgui`, zweryfikowane w `objdump`) — efektywny adres
+  dla `ret` to WYŁĄCZNIE bieżące `RSP` (zero przesunięcia), więc CR2 MUSI być równe
+  `RSP = 0x6ffffffaffd0`; zalogowane `CR2 0x0` to precyzyjnie zero, nie "blisko RSP". `RIP`/`CS`/
+  `RFLAGS`/`RSP`/`SS` pochodzą z ramki wrzuconej przez sam SPRZĘT CPU przy przejściu Ring3→Ring0
+  (ten układ zweryfikowany bajt-po-bajcie już w poprzedniej sesji) — więc te pola z definicji
+  architektury muszą być wiarygodne; `CR2` sprzęt też ustawia bezpośrednio w momencie faultu,
+  więc też powinno być wiarygodne. Skoro dwie wiarygodne-z-definicji wartości się nie zgadzają,
+  najbardziej prawdopodobne wyjaśnienie (NIE potwierdzone empirycznie w tej sesji): `CR2` zostaje
+  **nadpisane DRUGIM, zagnieżdżonym faultem** zanim nasz kod w `isr_handler` zdąży go odczytać
+  (`mov %cr2,...`) — np. gdyby coś w samej ścieżce obsługi tego pierwszego faultu (zanim
+  dojdziemy do odczytu CR2) samo dotknęło niezmapowanej pamięci, CPU ustawiłby CR2 na NOWY adres,
+  a oryginalny (ten, który faktycznie odpowiada RIP/RSP) zostałby bezpowrotnie nadpisany - RIP/
+  RSP/CS w ramce przerwania NIE zmieniłyby się (wrzucone raz, przez sprzęt, przy PIERWSZYM
+  wejściu), ale CR2 owszem. To by tłumaczyło czemu RIP/RSP są zawsze sensowne/konsekwentne a CR2
+  "lata" bez związku z nimi. Nie zakładać z góry — do potwierdzenia empirycznie.
+  **Czego NIE zdążono w tej sesji (jasno zostawione do kontynuacji):** nie sprawdzono jeszcze czy
+  to faktycznie zagnieżdżony/wtórny fault psuje CR2. Najtańszy, konkretny następny krok: dodać w
+  `isr_handler` (gałąź `int_no < 32`, na samym wejściu) prosty statyczny licznik reentrancji
+  (`static volatile int panic_depth = 0; panic_depth++` na wejściu, zalogować jego wartość ZARAZ
+  PRZED odczytem CR2, `panic_depth--` na wyjściu/przy `cli;hlt` nieważne bo i tak halt) — jeśli
+  `panic_depth > 1` w momencie gdy widzimy tę niespójność, to potwierdza zagnieżdżenie jako
+  przyczynę (i trzeba będzie zalogować OBA zdarzenia, zagnieżdżone i zewnętrzne, żeby zobaczyć co
+  faktycznie fault'uje w środku). Jeśli `panic_depth == 1` (brak zagnieżdżenia), teoria pada i
+  trzeba szukać gdzie indziej (np. czy `mov %%cr2` w ogóle jest poprawnie wykonywane w tym
+  kontekście/czy kompilator/inline asm nie robi czegoś nieoczekiwanego - mniej prawdopodobne,
+  ale do sprawdzenia dopiero gdy pierwsza hipoteza faktycznie padnie). Scenariusz klikania i
+  `scripts/click_gdb_inspect.sh` gotowe do ponownego użycia bez zmian.
+  Pełny log z tej sesji w `daily-work-report/summary-13-10-26-*.md`.
 - [ ] **Menu Start: rekursywne submenu** dla podfolderów w `/usr/bin` (dziś płaska lista z
   `VFS::ListDirectory` w `kernel/gui/compositor.cpp`, `RefreshStartMenu`) — do rozszerzenia
   teraz, gdy jest realny podfolder do przetestowania (`pkgserver`/apki rosną).

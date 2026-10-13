@@ -9,6 +9,7 @@
 #include "../drivers/rtl8139.h"
 #include "../proc/sched.h"
 #include "critical.h"
+#include "gdt.h"
 
 extern "C" Registers* isr_handler(Registers* regs) {
     if (regs->int_no < 32) {
@@ -41,6 +42,40 @@ extern "C" Registers* isr_handler(Registers* regs) {
             asm volatile("mov %%cr2, %0" : "=r"(cr2));
             SerialPort::WriteString("\nCR2 (faulting address): 0x");
             SerialPort::WriteString(itoa(cr2, buf, 16));
+
+            // CR2 wzgledem RSP faultujacego kontekstu, ze znakiem - odrozni "fault na
+            // offsecie wzgledem wlasnego stosu" (np. "mov 0x4(%rsp),%eax"/"ret") od
+            // czegos niezwiazanego z samym stosem (patrz notatka w TASKS.md, 2026-10-12).
+            int64_t cr2_rsp_delta = (int64_t)cr2 - (int64_t)regs->rsp;
+            SerialPort::WriteString("\nCR2 - RSP: ");
+            if (cr2_rsp_delta < 0) {
+                SerialPort::WriteString("-0x");
+                SerialPort::WriteString(itoa((uint64_t)(-cr2_rsp_delta), buf, 16));
+            } else {
+                SerialPort::WriteString("0x");
+                SerialPort::WriteString(itoa((uint64_t)cr2_rsp_delta, buf, 16));
+            }
+
+            // Stos jadra uzywany PRZY TYM FAULCIE: "regs" to dokladnie RSP w momencie
+            // wejscia do isr_handler (isr_common_stub robi "movq %rsp, %rdi" tuz przed
+            // "call isr_handler" - to adres o 8 bajtow nad biezacym %rsp w tej funkcji,
+            // czyli praktycznie szczyt uzywanej czesci stosu jadra przy tym zdarzeniu).
+            // kernel_stack_top(current) to oczekiwana gorna granica wedlug schedulera dla
+            // biezacego taska, TSS.rsp0(actual) to co faktycznie jest zaladowane w
+            // sprzecie w tej chwili - rozjazd miedzy nimi oznacza zepsuta synchronizacje
+            // TSS.rsp0 (nie sam przelacznik taskow), a "regs" blisko/pod
+            // kernel_stack_top-32768 oznacza przepelnienie stosu jadra (patrz TASKS.md,
+            // "Konkretny nastepny krok" z sesji 2026-10-12).
+            uint64_t expected_top = Scheduler::GetCurrentKernelStackTop();
+            uint64_t actual_rsp0 = GDT::GetTSSStack();
+            SerialPort::WriteString("\nKernel RSP (isr_handler entry): 0x");
+            SerialPort::WriteString(itoa((uint64_t)regs, buf, 16));
+            SerialPort::WriteString("\nKernel stack top (expected, current task): 0x");
+            SerialPort::WriteString(itoa(expected_top, buf, 16));
+            SerialPort::WriteString("\nKernel stack bottom (expected, 32KiB): 0x");
+            SerialPort::WriteString(itoa(expected_top - 32768, buf, 16));
+            SerialPort::WriteString("\nTSS.rsp0 (actual, hardware): 0x");
+            SerialPort::WriteString(itoa(actual_rsp0, buf, 16));
         }
         SerialPort::WriteString("\nHalting.\n");
 
