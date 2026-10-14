@@ -13,6 +13,12 @@
 
 extern "C" Registers* isr_handler(Registers* regs) {
     if (regs->int_no < 32) {
+        // Licznik reentrancji - sprawdza hipotezę z TASKS.md (sesja 2026-10-13): czy
+        // zalogowany CR2 bywa niezgodny z RIP/RSP bo zostaje nadpisany DRUGIM, zagnieżdżonym
+        // faultem zanim nasz kod zdąży go odczytać. panic_depth > 1 w chwili odczytu CR2
+        // (poniżej) potwierdza zagnieżdżenie; panic_depth == 1 je wyklucza.
+        static volatile int panic_depth = 0;
+        panic_depth++;
         SerialPort::WriteString("OxideOS: Kernel Panic! (OSOD)\n");
         SerialPort::WriteString("Exception Number: ");
         char buf[16];
@@ -38,6 +44,9 @@ extern "C" Registers* isr_handler(Registers* regs) {
         SerialPort::WriteString("\nCS: 0x");
         SerialPort::WriteString(itoa(regs->cs, buf, 16));
         if (regs->int_no == 14) {
+            SerialPort::WriteString("\nPanic depth (reentrancy, before CR2 read): ");
+            SerialPort::WriteString(itoa((uint64_t)panic_depth, buf, 10));
+
             uint64_t cr2;
             asm volatile("mov %%cr2, %0" : "=r"(cr2));
             SerialPort::WriteString("\nCR2 (faulting address): 0x");
@@ -79,6 +88,7 @@ extern "C" Registers* isr_handler(Registers* regs) {
         }
         SerialPort::WriteString("\nHalting.\n");
 
+        panic_depth--;
         OSOD::Draw(regs);
         asm volatile("cli; hlt");
     }

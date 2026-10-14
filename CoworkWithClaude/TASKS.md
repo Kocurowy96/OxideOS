@@ -268,6 +268,69 @@ Do przetestowania w prawdziwym GUI.
   ale do sprawdzenia dopiero gdy pierwsza hipoteza faktycznie padnie). Scenariusz klikania i
   `scripts/click_gdb_inspect.sh` gotowe do ponownego użycia bez zmian.
   Pełny log z tej sesji w `daily-work-report/summary-13-10-26-*.md`.
+  **Postęp (2026-10-14, sesja automatyczna):** Zrobiony zapowiedziany "konkretny następny krok" —
+  `kernel/cpu/isr.cpp` (`int_no==14`) dostał licznik reentrancji: `static volatile int
+  panic_depth` zwiększany na samym wejściu do gałęzi `int_no < 32` (przed czymkolwiek innym),
+  logowany ZARAZ PRZED odczytem `CR2`, zmniejszany tuż przed `cli; hlt` (martwy kod w praktyce,
+  bo `hlt` i tak nie wraca - zrobione tak jak zapisano w poprzedniej notatce, dla symetrii).
+  Zweryfikowane: czysty rebuild, `scripts/test_headless.sh` dalej PASS.
+  **Wynik jednoznaczny z DWÓCH niezależnych odtworzeń tym samym scenariuszem
+  (`scripts/click_gdb_inspect.sh`) — hipoteza "zagnieżdżony fault nadpisuje CR2" z sesji
+  2026-10-13 OBALONA:** `panic_depth` w obu przebiegach = **1** w momencie odczytu CR2 (czyli
+  brak reentrancji) - mimo to `CR2` dalej matematycznie niezgodne z `RIP`/`RSP` (przebieg 1:
+  `RIP 0x400261, RSP 0x6ffffffaffd8, CR2 0x1ed5`; przebieg 2: identyczne `RIP`/`RSP`, ale
+  `CR2 0xea4`). Ważny nowy fakt: CR2 jest RÓŻNE między przebiegami mimo identycznego RIP/RSP -
+  to wyklucza "stare, nieaktualne CR2 z wcześniejszego momentu bootu" (byłoby takie samo za
+  każdym razem) i potwierdza, że CR2 faktycznie odzwierciedla jakieś realne, zdarzenie-
+  specyficzne zdarzenie faultu za każdym razem, tylko nie to, które mówią RIP/RSP.
+  **Dwie dodatkowe hipotezy sprawdzone i też OBALONE w tej sesji** (żeby nie zostawić ich
+  niesprawdzonych skoro łatwo to zrobić): (1) przekolejkowanie przez kompilator - `objdump -d
+  build/kernel.elf --disassemble=isr_handler` potwierdza, że odczyt `panic_depth` do wypisania
+  (`movsxd ... panic_depth`) i faktyczny odczyt `CR2` (`mov r12, cr2`) są w kodzie maszynowym w
+  tej samej, liniowej kolejności co w źródle (z wywołaniami `SerialPort::WriteString` pomiędzy),
+  żadnego skoku wstecz/do przodu które mogłyby to pomieszać; (2) błędna konfiguracja bramki IDT
+  dopuszczająca zagnieżdżone IRQ - `kernel/cpu/idt.cpp` potwierdza, że WSZYSTKIE wektory 0-47
+  (w tym 14) używają Interrupt Gate (`0x8E`/`0xEE`), nie Trap Gate, czyli `IF` jest czyszczone
+  sprzętowo na wejściu - maskowalne przerwania (timer/klawiatura/mysz/sieć) fizycznie nie mogą
+  się wepchnąć między wejście do `isr_handler` a odczyt CR2.
+  **Nowe, osobne odkrycie przy tej okazji (czytanie kodu, nie zgadywanie) - prawdopodobnie
+  ważniejsze niż sama zagadka CR2:** `Scheduler::KillCurrentTask()` (`kernel/proc/sched.cpp`,
+  wołane z `sys_exit` w `kernel/cpu/syscall.cpp`) tylko ustawia `active = false` i zmniejsza
+  `task_count` - NIE zwalnia stosu użytkownika zabitego taska (4 strony/16KiB, alokowane w
+  `CreateTask` przez `PMM::AllocatePages(4)`) ani jego stosu jądra (8 stron/32KiB), i NIC w
+  całym kodzie nigdzie nie odmapowuje stron ELF-a zabitego taska z `VMM`/`kernel_pml4` -
+  potwierdzone grepem, `UnmapPage`/zwalnianie stosu taska nie istnieje w kodzie. Każdy
+  `sys_exit` więc po cichu wycieka pamięć (user stack + kernel stack, i trwale pozostawia
+  mapowania ELF-a). Dodatkowo: skoro `KillCurrentTask()` nie zmienia `current_task`, a task po
+  `sys_exit` zostaje w pętli `while(1) hlt` na WŁASNYM (już "martwym") stosie jądra z włączonym
+  `IF` - jeśli trafi w nią tick timera, `Scheduler::Schedule()` i tak zapisze stan do
+  `tasks[current_task].regs` (nieszkodliwe, slot jest nieaktywny) i przerzuci TSS.rsp0 na
+  następny aktywny task, ale sama RAMKA PRZERWANIA zepchnięta sprzętowo na ten opuszczony stos
+  jądra nigdy nie zostaje ani odebrana, ani zwolniona - zostaje tam na zawsze (nie udało się w
+  tej sesji potwierdzić, czy to REALNIE dociera do kolizji z czymkolwiek w tym konkretnym,
+  krótkim scenariuszu testowym - zbyt mało uruchomień apek żeby prawdopodobnie wyczerpać
+  wyciekającą pamięć - ale to prawdziwy, wcześniej nieudokumentowany bug warty poprawki
+  niezależnie od głównej zagadki CR2).
+  **Czego NIE zdążono w tej sesji:** nie przejrzano jeszcze NA ŻYWO (przez GDB) faktycznej
+  zawartości tablic stron (`kernel_pml4`, chodzenie PML4->PDPT->PD->PT) dla adresów `CR2`
+  (`0x1ed5`/`0xea4`) ani dla zakresu `0x400000+` (HELLO.ELF) w chwili paniki - to jedyny kawałek
+  "twardych danych" jeszcze nie zebrany po 4 sesjach (poprzednie sesje sprawdzały rejestry/
+  `tasks[]`/disassembly, nigdy same tablice stron na żywo). **Konkretny następny krok dla
+  kolejnej sesji:** w `scripts/click_gdb_inspect.sh` po zatrzymaniu dodać do pliku komend GDB
+  odczyt fizycznego adresu z `cr3`, zrzut wpisów PML4/PDPT/PD/PT dla `0x1ed5`, `0xea4` i
+  `0x400000` (np. `x/8gx` na kolejnych poziomach, offsety liczone jak w `kernel/mem/vmm.cpp`
+  `GetNextLevel`/`MapPage`) - to pierwszy raz kiedy ktoś faktycznie zobaczy co live tablice
+  stron mówią o tych adresach, zamiast wnioskować z samych rejestrów. Jeśli to też nie da
+  jednoznacznej odpowiedzi, warto rozważyć przeniesienie reszty tej konkretnej zagadki (CR2 vs
+  RIP/RSP) do "Do przegadania" jako część większej decyzji o modelu procesów - 4 sesje z rzędu
+  obaliły już: przepełnienie stosu jądra, rozjazd TSS.rsp0, nadpisanie CR2 przez zagnieżdżony
+  fault, przekolejkowanie przez kompilator i błędną bramkę IDT, bez znalezienia jednego,
+  punktowego miejsca do poprawki - ale wyciek pamięci przy `sys_exit` (odkryty wyżej) to
+  osobny, mniejszy, możliwy do punktowej poprawki temat niezależnie od wyniku tego kroku -
+  warto rozważyć jako następne zadanie (zwolnienie stosu taska w `KillCurrentTask`, analogicznie
+  do już istniejącego odroczonego zwalniania `Window::phys_fb_buffer` przez Compositor, żeby nie
+  zwolnić pamięci jeszcze czytanej w trakcie przerwania).
+  Pełny log z tej sesji w `daily-work-report/summary-14-10-26-*.md`.
 - [ ] **Menu Start: rekursywne submenu** dla podfolderów w `/usr/bin` (dziś płaska lista z
   `VFS::ListDirectory` w `kernel/gui/compositor.cpp`, `RefreshStartMenu`) — do rozszerzenia
   teraz, gdy jest realny podfolder do przetestowania (`pkgserver`/apki rosną).
