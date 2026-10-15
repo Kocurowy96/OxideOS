@@ -331,6 +331,74 @@ Do przetestowania w prawdziwym GUI.
   do już istniejącego odroczonego zwalniania `Window::phys_fb_buffer` przez Compositor, żeby nie
   zwolnić pamięci jeszcze czytanej w trakcie przerwania).
   Pełny log z tej sesji w `daily-work-report/summary-14-10-26-*.md`.
+  **Postęp (2026-10-15, sesja automatyczna):** Zrobiony zapowiedziany "konkretny następny krok" —
+  pierwszy raz w tej 5-sesyjnej serii faktyczny, żywy odczyt tablic stron przez GDB (nie tylko
+  rejestrów/`tasks[]`/disassembly jak dotąd). Nowy, wielorazowy plik komend GDB (walczący ręcznie
+  PML4->PDPT->PD->PT identycznie jak `kernel/mem/vmm.cpp` `GetNextLevel`/`MapPage`: odczyt
+  `hhdm_request.response->offset` wprost z pamięci przez adres symbolu — bez potrzeby `-g`/DWARF,
+  bo cały rachunek robi się na surowych wskaźnikach — potem indeksy z przesunięć bitowych adresu,
+  potem kolejne poziomy przez HHDM) użyty do zbadania CR2 i `0x400000` (HELLO.ELF) w chwili
+  paniki. Dodatkowo potwierdzone, że `qemu-system-x86_64 -s` faktycznie eksponuje `$cr2`/`$cr3`
+  jako rejestry GDB (`info all-registers`) — nie było to pewne przed tą sesją.
+  **3 NIEZALEŻNE, zweryfikowane-jako-prawdziwe odtworzenia** (sprawdzone przez `grep -c "Halting\."`
+  w logu przed zaufaniem odczytowi GDB — przy okazji złapany i odrzucony jeden PUSTY odczyt, gdzie
+  scenariusz klikania w ogóle nie odtworzył paniki w oknie `halt_timeout`, a GDB i tak się dołączył
+  po limicie do wciąż żywego jądra, dając bezwartościowe `CR2=0x0` "z buta" — ważna metodologiczna
+  pułapka na przyszłość, każdy odczyt GDB w tym skrypcie trzeba potwierdzać przez `Halting.` w
+  logu, inaczej łatwo o fałszywie "ładne" dane z jądra które po prostu jeszcze nie spanikowało):
+  - We WSZYSTKICH 3 przypadkach (`CR2=0x0`/RIP `0x40041e`×2, `CR2=0x188b`/RIP `0x400261`×1) —
+    `PML4[0]` i `PDPT[0]` present, ale **`PD[0]` NIE jest present (`0x0`)** — czyli cały dolny
+    region 0–0x1FFFFF (obejmujący KAŻDĄ zaobserwowaną w 5 sesjach wartość CR2: `0x0`, `0xea4`,
+    `0x118a`, `0x1ed5`, `0x188b`, `0x1f6c`, `0x205a`) nie ma w ogóle zaalokowanej tablicy stron na
+    tym poziomie — architektonicznie poprawny, "czysty" null-guard fault, nie śmieciowa wartość.
+  - Odczyt `$cr2` przez GDB (żywy rejestr CPU, już po `hlt`) zgadza się dokładnie z tym, co jądro
+    samo zalogowało przez `mov %%cr2` w panic handlerze w KAŻDYM z 3 przypadków — CR2 nie dryfuje
+    między zalogowaniem a zatrzymaniem CPU, odczyt jest stabilny i wiarygodny.
+  - `0x400000` (HELLO.ELF) ma WSZYSTKIE 4 poziomy present w każdym przebiegu — kod drugiej,
+    wciąż żywej instancji HELLO pozostaje poprawnie zmapowany, to nie jest przyczyna.
+  - Przy okazji, niezależnie, ręcznie porównana kolejność pól `struct Registers`
+    (`kernel/cpu/isr.h`) z kolejnością `pushq` w `isr_common_stub`
+    (`kernel/cpu/interrupts.S`) — zgadza się bajt w bajt (rax,rbx,rcx,rdx,rsi,rdi,rbp,
+    r8..r15,int_no,err_code,rip,cs,rflags,rsp,ss) — potwierdzenie niezależne od sesji 2026-10-13.
+    `objdump -d HELLO.ELF` potwierdza RIP `0x40041e`=`ret` i `0x400261`=`mov 0x4(%rsp),%eax`
+    dokładnie jak w poprzednich notatkach.
+  **Wniosek:** mamy teraz TWARDY dowód że CR2 jest realnym, stabilnym, architektonicznie spójnym
+  adresem null-guard (nie śmieciem/noise) — ale to wciąż matematycznie niezgodne z RIP(`ret`)/RSP
+  (dla `ret` CR2 musi = RSP; dla `mov 0x4(%rsp),%eax` CR2 musi = RSP+4) przy w pełni zweryfikowanej
+  (po raz drugi, niezależnie) poprawnej ramce rejestrów i braku zagnieżdżenia. Z 5 sesji obalone
+  już: przepełnienie stosu jądra, rozjazd TSS.rsp0, nadpisanie CR2 przez zagnieżdżony fault,
+  przekolejkowanie przez kompilator, błędna bramka IDT, a teraz dodatkowo: CR2 "noise"/dryf po
+  zalogowaniu, oraz brak mapowania kodu HELLO jako przyczyna. Każda hipoteza testowalna metodą
+  "zatrzymaj się PO panice i obejrzyj stan" jest wyczerpana.
+  **Nowy, nieużyty jeszcze trop (realny, nie zgadywany) na następną sesję:** wszystkie dotychczasowe
+  sesje łączyły GDB dopiero PO "Halting." (`-s` bez `-S`, jądro leci swobodnie, GDB ogląda already-
+  -halted CPU). Nikt jeszcze nie złapał SAMEGO MOMENTU faultu live - `-s -S` od startu + hardware
+  breakpoint (`hbreak isr_stub_14` albo `hbreak *isr_handler`) PRZED odpaleniem scenariusza
+  klikania, żeby zatrzymać się na pierwszej instrukcji obsługi WŁAŚNIE tego faultu i śledzić
+  krok-po-kroku (`stepi`) aż do odczytu CR2 - to odróżni "CR2 jest już błędne w chwili wejścia do
+  handlera" (problem sprzętu/emulatora QEMU-TCG, do zweryfikowania też na realnym KVM jeśli
+  dostępne) od "coś W TRAKCIE obsługi tego konkretnego faultu psuje CR2 między wejściem a naszym
+  odczytem" (błąd w kodzie). `click_gdb_inspect.sh` obecnie nie wspiera `-S`+breakpointów (tylko
+  tryb "dołącz po Halting") - potrzebuje małej rozbudowy (opcjonalny tryb `-S` + plik z
+  breakpointami odpalany PRZED scenariuszem klikania zamiast po nim).
+  **Osobna, nowa obserwacja bezpieczeństwa (czytanie kodu, nie zgadywanie) o zaproponowanej w
+  poprzedniej notatce poprawce wycieku pamięci w `KillCurrentTask`:** NIE wystarczy zwolnić stosu
+  taska synchronicznie wewnątrz `KillCurrentTask()` (wołanego z `sys_exit`, `kernel/cpu/syscall.cpp`)
+  - po powrocie z syscalla (`Syscall::Handler` kończy się normalnie, `isr_common_stub` robi zwykłe
+  pop+`iretq` na NIEZMIENIONEJ ramce, bo `sys_exit` nie wywołuje `Scheduler::Schedule()`) CPU wraca
+  do Ring3 i "martwy" task dalej fizycznie wykonuje się (pętla w `ExecAppTask`/kodzie apki) z
+  `IF=1` - KOLEJNE przerwanie (np. kolejny tick PIT) i tak wepchnie nową ramkę na TSS.rsp0, czyli
+  na WŁAŚNIE zwolniony stos jądra, zanim `Scheduler::Schedule()` zdąży w ogóle przełączyć TSS na
+  inny task. Synchroniczne zwolnienie w `sys_exit` byłoby więc GORSZYM bugiem niż obecny wyciek
+  (realny use-after-free zamiast nieszkodliwego wycieku) - stąd odroczony wzorzec
+  `Window::phys_fb_buffer` (zwalniany przez Compositor, osobny task, bezpiecznie) NIE przenosi się
+  tu wprost 1:1: trzeba najpierw zagwarantować że martwy task nigdy więcej nie dostanie przerwania
+  na swoim stosie jądra, zanim cokolwiek go zwolni - co realnie wymaga wymuszenia natychmiastowego
+  przełączenia zadania z poziomu samego `sys_exit` (nie czekania na następny tick PIT), nie tylko
+  oznaczenia "do zwolnienia". Nie zaimplementowane w tej sesji celowo - zbyt ryzykowne żeby robić
+  "na ślepo" bez przeglądu, zostawione jako jasno opisany, osobny temat na przyszłość (patrz też
+  `kernel/proc/sched.cpp` `Scheduler::Schedule`/`KillCurrentTask`).
+  Pełny log z tej sesji w `daily-work-report/summary-15-10-26-*.md`.
 - [ ] **Menu Start: rekursywne submenu** dla podfolderów w `/usr/bin` (dziś płaska lista z
   `VFS::ListDirectory` w `kernel/gui/compositor.cpp`, `RefreshStartMenu`) — do rozszerzenia
   teraz, gdy jest realny podfolder do przetestowania (`pkgserver`/apki rosną).
