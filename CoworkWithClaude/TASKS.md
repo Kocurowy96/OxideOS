@@ -399,6 +399,75 @@ Do przetestowania w prawdziwym GUI.
   "na ślepo" bez przeglądu, zostawione jako jasno opisany, osobny temat na przyszłość (patrz też
   `kernel/proc/sched.cpp` `Scheduler::Schedule`/`KillCurrentTask`).
   Pełny log z tej sesji w `daily-work-report/summary-15-10-26-*.md`.
+  **Postęp (2026-10-16, sesja automatyczna):** Zrobiony zapowiedziany "nowy, nieużyty jeszcze
+  trop" — pierwsze w tej 6-sesyjnej serii złapanie SAMEGO MOMENTU faultu na żywo (`-S` od
+  resetu + hardware breakpoint PRZED scenariuszem klikania, nie dołączanie po `Halting.`).
+  `scripts/click_gdb_inspect.sh` dostał nowy, opcjonalny tryb "live" (dodatkowe argumenty
+  `[live_break_symbol] [live_timeout_s]`) — gdy podany, QEMU startuje z `-S`, GDB dołącza się
+  natychmiast, stawia hardware breakpoint na podanym symbolu i robi `continue` ZANIM
+  jakikolwiek klik pójdzie przez QMP (synchronizacja: krótkie `sleep 2` po `continue` -
+  `target remote`/`hbreak`/`continue` w GDB batch wykonują się praktycznie natychmiast, więc
+  to wystarcza). Breakpoint postawiony na `isr_stub_14` (konkretny wektor w
+  `kernel/cpu/interrupts.S`, wykonuje się WYŁĄCZNIE dla exception 14 — w przeciwieństwie do
+  `isr_handler`, który łapie też każdy tick timera/syscall/IRQ, więc byłby bezużyteczny jako
+  breakpoint). Backward-compatible: bez nowych argumentów skrypt zachowuje się tak jak wcześniej.
+  Zweryfikowane: czysty rebuild (kernel + apki), `scripts/test_headless.sh` dalej PASS.
+  **Wynik — DECYDUJĄCY, z 3 niezależnych odtworzeń (`scripts/click_gdb_inspect.sh` w trybie
+  live, ten sam scenariusz klikania zapisany wyżej w tym pliku):** w KAŻDYM z 3 przebiegów
+  `$cr2` odczytane przez GDB NA SAMEJ PIERWSZEJ INSTRUKCJI `isr_stub_14` (czyli PRZED
+  wykonaniem jakiegokolwiek kodu jądra — nawet przed `pushq $14` — dosłownie najwcześniejszy
+  możliwy punkt obserwacji po sprzętowym dostarczeniu wyjątku) jest JUŻ matematycznie
+  niezgodne z RIP/RSP z tej samej ramki:
+  - Przebieg 1 i 2 (identyczny plik komend GDB w obu, stąd identyczny wynik — TCG jest
+    deterministyczny dla tego samego timingu): `CR2=0x0`, `RIP=0x40041e` (`ret`, efektywny
+    adres = RSP = `0x6fffffffffd0` — CR2 powinno być tym, nie zerem).
+  - Przebieg 3 (inny plik komend GDB → inny realny czas ścienny spędzony w GDB między
+    klikami → inny wynik wyścigu, zgodnie z hipotezą "race/timing" z sesji 2026-10-12):
+    `CR2=0x1cd0`, `RIP=0x400261` (`mov 0x4(%rsp),%eax`, efektywny adres = RSP+4 =
+    `0x6ffffffcffdc` — znowu nie zgadza się z zalogowanym CR2).
+  **To OSTATECZNIE wyklucza KAŻDĄ hipotezę "coś w naszym kodzie psuje/nadpisuje CR2"** —
+  nic z kodu jądra nie zdążyło się jeszcze wykonać w momencie tego odczytu. Dodatkowo (na
+  sugestię zewnętrznego researchu, patrz niżej) przy tej samej okazji sprawdzone $cr0/$cr3/
+  $cr4 w przebiegu 3 — wszystkie sensowne (`CR0=0x80010011` PG+WP+PE, `CR3=0x6c000` realny
+  adres fizyczny tablic stron, `CR4=0x20` PAE) — wyklucza też "GDB błędnie mapuje $cr2 na coś
+  innego w gdbstub" jako tanią alternatywną hipotezę (gdyby mapowanie było zepsute, raczej
+  wszystkie 4 rejestry CRx byłyby bez sensu, nie tylko CR2).
+  **Zewnętrzny research (web, nie zgadywanie) na pytanie "czy to znany bug QEMU TCG?":**
+  żadne zgłoszenie na GitLab/qemu-devel/Launchpad (pakiet Ubuntu qemu-system-x86 8.2.2) nie
+  opisuje CR2 jako błędnego/zerowego w TCG x86_64 dla page faultów ogólnie, ani specyficznie
+  po `int 0x80`+`iretq`/na instrukcjach relatywnych do RSP (`ret`/`mov offset(%rsp)`).
+  Istnieje analogiczny, dobrze udokumentowany bug w samym HOŚCIE Linuksa (nie w QEMU) — CR2
+  bywało nadpisywane przez tracepointy/inne wyjątki między sprzętowym dostarczeniem a
+  odczytem w handlerze (Jiri Olsa 2014, Peter Zijlstra 2019, "x86/mm, tracing: Fix CR2
+  corruption") — ale to dotyczy realnego CPU/jądra Linuksa, nie emulacji gościa w QEMU TCG
+  (tam wstrzyknięcie wyjątku ma atomowo ustawiać `env->cr[2]` zanim jakakolwiek instrukcja
+  gościa się wykona) — więc nie przenosi się tu wprost, tylko pokazuje że "CR2 corruption
+  między faultem a odczytem" to realna, znana KLASA bugów w ogóle, nawet jeśli nie konkretnie
+  tu. Ocena researchu: fakt że `int 0x80`→`iretq`→`ret` to jedna z najbardziej "przechodzonych"
+  ścieżek w jakimkolwiek hobby-OS pod TCG - gdyby to był fundamentalny, zawsze-odtwarzalny bug
+  QEMU, ktoś by go już zgłosił. Niskie prawdopodobieństwo nieznanego buga QEMU, ale NIE
+  wykluczone (nasz konkretny wzorzec - fault TUŻ PO powrocie z software interrupt, nie
+  klasyczny COW/demand-paging ktory QEMU najlepiej testuje - moze byc rzadziej cwiczona
+  sciezka w TCG).
+  **Czego NIE zdążono/nie da się zrobić w tej sesji (jasno zostawione do kontynuacji):** ten
+  kontener w chmurze nie ma `/dev/kvm` (brak zagnieżdżonej wirtualizacji) — nie było możliwości
+  porównać z działaniem pod KVM/realnym sprzętem, co teraz jest jedynym jeszcze nie
+  wypróbowanym, decydującym testem różnicującym "bug QEMU TCG" od "coś co nadal nie zostało
+  zrozumiane w naszym kodzie/architekturze". **Rekomendacja dla Kocurowy96 (wymaga realnego
+  sprzętu, nie da się zrobić automatycznie w tej chmurze):** odtworzyć ten sam scenariusz
+  klikania (zapisany wyżej w tym pliku, `scripts/click_gdb_inspect.sh ... isr_stub_14`) na
+  lokalnej maszynie (ASUS TUF Gaming A15, gdzie `/dev/kvm` powinno być dostępne) z
+  `-enable-kvm` — jeśli panika/niezgodność CR2 ZNIKA pod KVM (realny sprzęt), to mocno
+  potwierdza bug/niedoskonałość emulacji TCG (i wtedy ten bug przestaje być krytyczny dla
+  realnego użytkownika OxideOS, tylko dla deweloperskiego testowania pod czystym TCG); jeśli
+  PANIKA WYSTĘPUJE TAKŻE pod KVM, to wyklucza TCG jako przyczynę i trzeba wrócić do szukania
+  w kodzie jądra (ale wtedy repertuar "małych, punktowych" hipotez do sprawdzenia jest już
+  prawie wyczerpany po 6 sesjach - realistycznie oznaczałoby to, że problem leży w czymś
+  strukturalnym, najpewniej w modelu procesów/braku per-task page tables, i czas przenieść
+  dalsze dochodzenie do "Do przegadania" jako część tamtej decyzji architektonicznej).
+  `scripts/click_gdb_inspect.sh` (nowy tryb live) i scenariusz klikania gotowe do ponownego
+  użycia bez zmian niezależnie od wyniku tego testu.
+  Pełny log z tej sesji w `daily-work-report/summary-16-10-26-*.md`.
 - [ ] **Menu Start: rekursywne submenu** dla podfolderów w `/usr/bin` (dziś płaska lista z
   `VFS::ListDirectory` w `kernel/gui/compositor.cpp`, `RefreshStartMenu`) — do rozszerzenia
   teraz, gdy jest realny podfolder do przetestowania (`pkgserver`/apki rosną).
