@@ -128,6 +128,18 @@ for elf in HELLO SETTINGS CALC PAINT CALENDAR WINVER CLOCK NOTEPAD TASKMGR; do
     add_write "${elf}.ELF" "/usr/bin/${elf}.ELF"
 done
 
+# Demonstracyjny podkatalog w /usr/bin/ACCESSORIES - do przetestowania nowego
+# kaskadowego submenu Menu Start (RefreshMenuLevel/DrawMenuLevel w compositor.cpp).
+# CALC.ELF skopiowany (nie przeniesiony) zeby nie zmienic istniejacego ukladu
+# pozycji top-level Menu Start ani wspolrzednych klikania z docs/gui.md. "mkdir"
+# dopisany TUTAJ (po zapisie wszystkich powyzszych top-level .ELF, nie w poczatkowym
+# batchu mkdir) zeby wpis katalogu ACCESSORIES w /usr/bin wypadl w porzadku katalogowym
+# NA KONCU listy (ext2 zachowuje porzadek wstawiania), a nie na samym początku -
+# istniejące pozycje Menu Start (HELLO..TASKMGR) zostają więc na dokładnie tych samych
+# miejscach co dotąd.
+echo "mkdir /usr/bin/ACCESSORIES" >> "$DEBUGFS_CMDS"
+add_write "CALC.ELF" "/usr/bin/ACCESSORIES/CALC.ELF"
+
 # Kopiowanie dodatkowych assetow (tla, ikony, dzwieki) na dysk
 if [ -d assets ]; then
     for file in assets/*; do

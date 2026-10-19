@@ -468,9 +468,30 @@ Do przetestowania w prawdziwym GUI.
   `scripts/click_gdb_inspect.sh` (nowy tryb live) i scenariusz klikania gotowe do ponownego
   użycia bez zmian niezależnie od wyniku tego testu.
   Pełny log z tej sesji w `daily-work-report/summary-16-10-26-*.md`.
-- [ ] **Menu Start: rekursywne submenu** dla podfolderów w `/usr/bin` (dziś płaska lista z
-  `VFS::ListDirectory` w `kernel/gui/compositor.cpp`, `RefreshStartMenu`) — do rozszerzenia
-  teraz, gdy jest realny podfolder do przetestowania (`pkgserver`/apki rosną).
+  **Postęp (2026-10-19, sesja automatyczna, odkrycie przy okazji innego zadania — NIE
+  kontynuacja zaplanowanego "konkretnego następnego kroku", ten wciąż wymaga realnego
+  sprzętu od Kocurowy96):** przy weryfikacji osobnego zadania (rekursywne submenu Menu
+  Start, patrz niżej w "Zrobione") przypadkiem znaleziony dużo TAŃSZY, dwuklikowy
+  reprodukator tej samej klasy paniki — nie trzeba już całej sekwencji 7 apek z Menu
+  Start. Scenariusz: świeży rozruch (startowe okienko HELLO NIE zamknięte, tak jak
+  domyślnie), Start → dowolna DRUGA apka (sprawdzone na CALC, zarówno z top-level Menu
+  Start jak i z nowego submenu ACCESSORIES — identyczny wynik w obu przypadkach,
+  potwierdzając że to nie ma nic wspólnego z submenu). **Dwa niezależne odtworzenia w tej
+  sesji, ten sam charakterystyczny sygnał co w poprzednich 6 sesjach**: Exception 14,
+  `RIP 0x400261`/`0x40041e` (te same dwa adresy co zawsze — `mov 0x4(%rsp),%eax` i `ret`
+  tuż po `int 0x80` w `sys_get_event`), `CR2` matematycznie niezgodne z `RSP` (przebieg
+  przez submenu: `RIP 0x40041e, RSP 0x6fffffffffd0, CR2 0x0`; przebieg top-level:
+  `RIP 0x400261, RSP 0x6fffffffffd8, CR2 0xe3c`), `Panic depth = 1` (brak zagnieżdżenia,
+  zgodnie z sesją 2026-10-14). **Dlaczego to ważne:** obala milczące założenie z
+  wcześniejszych sesji, że ten bug potrzebuje DŁUGIEJ sekwencji uruchomień/ponownego
+  uruchomienia TEJ SAMEJ apki (HELLO) żeby się ujawnić — wystarczą DWA różne taski
+  (startowe HELLO, wciąż żywe + dowolna druga apka wystartowana z Menu Start), bez
+  zamykania czegokolwiek i bez powtórek. Wzmacnia to hipotezę "systemowa/architektoniczna
+  usterka w ścieżce powrotu z syscalla przy obecności ≥2 aktywnych tasków", nie coś
+  specyficznego dla konkretnej apki/powtórzenia. Nie zmienia to rekomendacji z sesji
+  2026-10-16 (decydujący test to wciąż realny sprzęt/KVM, niedostępny w tym kontenerze)
+  — dopisane tu wyłącznie jako tani, dodatkowy punkt danych, bez przerywania zadania
+  submenu dla pogłębiania tego dochodzenia (poza zakresem tej sesji).
 - [ ] **Formalny zestaw regresji UI** — spisać istniejące ad-hoc scenariusze
   `headless_interact.sh` (klikanie Kalkulatora/WinVer/Ustawień/Kalendarza/Notatnika/
   Menedżera Zadań, współrzędne liczone z `sys_create_window` + layoutu kontrolek, patrz
@@ -514,6 +535,50 @@ Do przetestowania w prawdziwym GUI.
 
 ## Zrobione
 
+- [x] (2026-10-19) **Menu Start: rekursywne submenu dla podfolderów w `/usr/bin`** — pozycja
+  była płaska lista z `VFS::ListDirectory` (`RefreshStartMenu`, `kernel/gui/compositor.cpp`),
+  katalogi były już zbierane do listy ale klikalne tylko jako (błędnie) próba uruchomienia ich
+  jako ELF — żadnej obsługi kaskadowego otwierania podfolderu.
+  **Zmiana**: płaski stan (`start_menu_entries`/`start_menu_paths`/`start_menu_entry_count`)
+  zastąpiony tablicą `menu_levels[MAX_MENU_DEPTH]` (`StartMenuLevel`: lista pozycji + ścieżek +
+  zakotwiczenie x/y + który indeks ma aktualnie otwarte submenu). `RefreshStartMenu` →
+  `RefreshMenuLevel(level, dir_path)`, generyczna (działa dla dowolnego katalogu, nie tylko
+  `/usr/bin`), budująca ścieżkę potomka z `dir_path` zamiast zaszytego na sztywno prefiksu.
+  Rysowanie/obsługa kliku wydzielone do nowej, wolnej funkcji `DrawMenuLevel` (wywoływanej w
+  pętli po `menu_open_depth` otwartych poziomach z `Compositor::Render`) — klik na katalog
+  otwiera/zamyka (toggle) jego submenu zakotwiczone po prawej stronie klikniętej pozycji
+  (z przesunięciem w górę gdyby miało wyjść poza dół ekranu), klik na `.ELF` uruchamia apkę i
+  zamyka CAŁE menu (wszystkie poziomy), klik poza wszystkimi otwartymi poziomami zamyka menu.
+  Katalogi dostają wizualną strzałkę ">" po prawej (sygnalizuje że to nie jest bezpośrednio
+  uruchamialna pozycja). Limit głębi `MAX_MENU_DEPTH=3` (chroni przed przepełnieniem tablicy
+  przy bardzo głęboko zagnieżdżonych katalogach — po osiągnięciu limitu katalog zostaje
+  nieklikalny, nie ma jeszcze UI błędu/komunikatu, uczciwie odnotowane jako nieobsłużony
+  skrajny przypadek, mało prawdopodobny przy obecnej głębokości `/usr/bin`).
+  Ponieważ żaden prawdziwy podkatalog jeszcze nie istniał w budowanym obrazie dysku (`pkgserver`
+  z notatki zadania to tylko wpis w `.gitignore`, nie coś generowanego przez
+  `scripts/make_disk.sh`), dodany minimalny, demonstracyjny `/usr/bin/ACCESSORIES` z kopią (nie
+  przeniesieniem) `CALC.ELF` — `mkdir` dla tego katalogu celowo dopisany do `debugfs` DOPIERO PO
+  zapisie wszystkich top-level `.ELF` (nie w początkowym batchu `mkdir`), żeby w porządku
+  katalogowym ext2 (zachowuje kolejność wstawiania) wylądował na KOŃCU listy — pozycje
+  HELLO..TASKMGR zostają na dokładnie tych samych miejscach/współrzędnych co dotąd (nie psuje
+  żadnych istniejących scenariuszy klikania/`docs/gui.md`).
+  **Weryfikacja**: czysty `rm -rf build && cmake -B build -S . && cmake --build build` (0 nowych
+  ostrzeżeń w `compositor.cpp`). `scripts/test_headless.sh 25` → **PASS** (Ext2 init OK, brak
+  panic przy biernym rozruchu bez klikania). Dodatkowo `scripts/headless_interact.sh` ze
+  scenariuszem Start → klik ACCESSORIES → zrzut ekranu — **wizualnie potwierdzone**: submenu
+  otwiera się kaskadowo po prawej stronie, pozycja ACCESSORIES podświetlona (dark blue, jak
+  oczekiwano), submenu zawiera "CALC" ze swoją ikonką, dokładnie jak projektowano (ten sam
+  zrzut ekranu dołączony do raportu tej sesji).
+  **Uczciwie odnotowane, NIE jest regresją tej zmiany**: kliknięcie pozycji WEWNĄTRZ submenu
+  (`ACCESSORIES → CALC`) powoduje tę samą, od dawna badaną panikę page-fault co w "Do zrobienia
+  teraz" wyżej (Exception 14, `RIP 0x40041e`, ten sam charakterystyczny wzorzec CR2≠RSP) —
+  **niezależnie potwierdzone jako NIEZWiązane z tą zmianą**: dokładnie ta sama panika (ten sam
+  `RIP`/wzorzec) odtwarza się też przez klik na CALC z ISTNIEJĄCEGO, niezmienionego top-level
+  Menu Start (bez dotykania submenu w ogóle) — osobny kontrolny test w tej samej sesji,
+  dopisany jako nowy, tańszy reprodukator do notatki inwestygacyjnej wyżej. Funkcja submenu
+  sama w sobie (listowanie, rysowanie, otwieranie/zamykanie, rozwiązywanie ścieżki) działa
+  poprawnie — to uruchomienie DRUGIEGO taska w ogóle (niezależnie od tego czy przez submenu czy
+  top-level) trafia w istniejący, nienaprawiony jeszcze bug.
 - [x] (2026-10-09) **Redesign assetów — kursor i ikonka okna wbudowane w binarkę kernela**.
   `Compositor::Init()` (`kernel/gui/compositor.cpp`) nie woła już `VFS::ReadFile("/icon.bmp", ...)`
   ani `VFS::ReadFile("/cursor_normal.bmp", ...)` w runtime — zamiast tego od razu przypisuje

@@ -97,11 +97,20 @@ static char fps_str[16];
 static bool prev_mouse_left = false;
 static bool start_menu_open = false;
 
-// Menu Start: pozycje wczytywane dynamicznie z /usr/bin (VFS::ListDirectory)
+// Menu Start: pozycje wczytywane dynamicznie z /usr/bin (VFS::ListDirectory),
+// rekursywnie - podkatalogi otwierają się jako kaskadowe submenu (Win95-style).
 #define MAX_START_MENU_ITEMS 32
-static DirEntry start_menu_entries[MAX_START_MENU_ITEMS];
-static char start_menu_paths[MAX_START_MENU_ITEMS][160];
-static int start_menu_entry_count = 0;
+#define MAX_MENU_DEPTH 3
+
+struct StartMenuLevel {
+    DirEntry entries[MAX_START_MENU_ITEMS];
+    char paths[MAX_START_MENU_ITEMS][160];
+    int count;
+    int x, y;
+    int open_child_index; // indeks pozycji z aktualnie otwartym submenu (level+1), -1 jeśli brak
+};
+static StartMenuLevel menu_levels[MAX_MENU_DEPTH];
+static int menu_open_depth = 0; // ile poziomów (0..) jest obecnie widocznych; 0 = menu zamknięte
 
 static bool str_ends_with(const char* str, const char* suffix) {
     int str_len = 0; while (str[str_len]) str_len++;
@@ -113,30 +122,39 @@ static bool str_ends_with(const char* str, const char* suffix) {
     return true;
 }
 
-// Odświeża listę pozycji Menu Start z zawartości /usr/bin
-static void RefreshStartMenu() {
+// Odświeża listę pozycji danego poziomu menu z zawartości dir_path (katalogu)
+static void RefreshMenuLevel(int level, const char* dir_path) {
+    StartMenuLevel* lvl = &menu_levels[level];
     DirEntry raw_entries[MAX_START_MENU_ITEMS];
-    int raw_count = VFS::ListDirectory("/usr/bin", raw_entries, MAX_START_MENU_ITEMS);
+    int raw_count = VFS::ListDirectory(dir_path, raw_entries, MAX_START_MENU_ITEMS);
 
-    start_menu_entry_count = 0;
-    for (int i = 0; i < raw_count && start_menu_entry_count < MAX_START_MENU_ITEMS; i++) {
+    lvl->count = 0;
+    lvl->open_child_index = -1;
+    for (int i = 0; i < raw_count && lvl->count < MAX_START_MENU_ITEMS; i++) {
         DirEntry* src = &raw_entries[i];
-        // Na razie pokazujemy tylko uruchamialne pliki .ELF (podkatalogi jako submenu to kolejny krok)
-        if (!(src->attributes & FS_ATTR_DIRECTORY) && !str_ends_with(src->name, ".ELF")) continue;
+        // Pokazujemy uruchamialne pliki .ELF oraz podkatalogi (jako kaskadowe submenu)
+        bool is_dir = (src->attributes & FS_ATTR_DIRECTORY) != 0;
+        if (!is_dir && !str_ends_with(src->name, ".ELF")) continue;
 
-        DirEntry* dst = &start_menu_entries[start_menu_entry_count];
+        DirEntry* dst = &lvl->entries[lvl->count];
         *dst = *src;
 
-        char* path = start_menu_paths[start_menu_entry_count];
-        const char* prefix = "/usr/bin/";
+        char* path = lvl->paths[lvl->count];
         int p = 0;
-        while (prefix[p]) { path[p] = prefix[p]; p++; }
+        while (dir_path[p]) { path[p] = dir_path[p]; p++; }
+        if (p == 0 || path[p - 1] != '/') path[p++] = '/';
         int n = 0;
         while (src->name[n] && p < 159) { path[p++] = src->name[n++]; }
         path[p] = '\0';
 
-        start_menu_entry_count++;
+        lvl->count++;
     }
+}
+
+// Odświeża Menu Start (poziom 0, /usr/bin) i zamyka wszystkie otwarte submenu
+static void RefreshStartMenu() {
+    RefreshMenuLevel(0, "/usr/bin");
+    menu_open_depth = 1;
 }
 
 void itoa(int n, char* buffer) {
@@ -257,6 +275,113 @@ static void DrawButton(int x, int y, int w, int h, const char* text, bool presse
     }
     
     Framebuffer::DrawString(text, text_x, text_y, 0x000000, 0xC0C0C0);
+}
+
+// Rysuje jeden poziom Menu Start (0 = główne menu, >=1 = kaskadowe submenu podkatalogu)
+// i obsługuje kliki/hover jego pozycji - otwarcie podkatalogu jako następnego poziomu,
+// uruchomienie apki (.ELF) albo podświetlenie już otwartego submenu.
+// Zwraca true jeśli kliknięcie uruchomiło apkę - wywołujący (Render, ma dostęp do
+// prywatnego Compositor::start_menu_open) powinien w tym wypadku zamknąć całe menu.
+static bool DrawMenuLevel(int level, int mouse_x, int mouse_y, bool mouse_clicked,
+                           uint32_t screen_h, int taskbar_h, int menu_w, int item_h, void* icon_bmp) {
+    bool launched = false;
+    StartMenuLevel* lvl = &menu_levels[level];
+    int list_h = lvl->count * item_h;
+    int menu_h = 8 + list_h;
+    if (menu_h < 100) menu_h = 100;
+    int menu_x = lvl->x;
+    int menu_y = lvl->y;
+
+    Framebuffer::DrawRect(menu_x, menu_y, menu_w, menu_h, 0xC0C0C0);
+    Framebuffer::DrawRect(menu_x, menu_y, menu_w, 2, 0xFFFFFF); // highlight top
+    Framebuffer::DrawRect(menu_x, menu_y, 2, menu_h, 0xFFFFFF); // highlight left
+    Framebuffer::DrawRect(menu_x + menu_w - 2, menu_y, 2, menu_h, 0x000000); // shadow right
+    Framebuffer::DrawRect(menu_x, menu_y + menu_h - 2, menu_w, 2, 0x000000); // shadow bottom
+
+    // Pasek boczny "OxideOS" tylko na menu głównym - podmenu nie ma na niego miejsca/potrzeby
+    int item_x_offset = 4;
+    if (level == 0) {
+        item_x_offset = 36;
+        Framebuffer::DrawRect(menu_x + 2, menu_y + 2, 32, menu_h - 4, 0x0000A0);
+        const char* os_name = "OxideOS";
+        int banner_y = menu_y + menu_h - 80;
+        for (int i = 0; os_name[i]; i++) {
+            Framebuffer::DrawChar(os_name[i], menu_x + 14, banner_y + i * 10, 0xFFFFFF, 0x0000A0);
+        }
+    }
+
+    int current_y = menu_y + 4;
+
+    for (int i = 0; i < lvl->count; i++) {
+        int bx = menu_x + item_x_offset;
+        int by = current_y;
+        int bw = menu_w - item_x_offset - 4;
+        int bh = item_h;
+
+        current_y += bh;
+
+        bool is_dir = (lvl->entries[i].attributes & FS_ATTR_DIRECTORY) != 0;
+        bool is_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
+        bool is_open_submenu = is_dir && (lvl->open_child_index == i);
+
+        uint32_t item_bg = (is_hover || is_open_submenu) ? 0x0000A0 : 0xC0C0C0; // Win95 Hover: Dark Blue
+        uint32_t item_fg = (is_hover || is_open_submenu) ? 0xFFFFFF : 0x000000; // Win95 Hover Text: White
+
+        Framebuffer::DrawRect(bx, by, bw, bh, item_bg);
+
+        // Ikona (na razie generyczna - domyslna ikonka okna 16x16)
+        if (icon_bmp) {
+            BMP::Draw(icon_bmp, bx + 4, by + (bh - 16) / 2);
+        }
+
+        // Nazwa pozycji: nazwa pliku bez rozszerzenia ".ELF" (katalogi bez zmian)
+        char display_name[FS_MAX_NAME];
+        int nlen = 0;
+        while (lvl->entries[i].name[nlen]) nlen++;
+        if (str_ends_with(lvl->entries[i].name, ".ELF")) nlen -= 4;
+        for (int k = 0; k < nlen && k < FS_MAX_NAME - 1; k++) display_name[k] = lvl->entries[i].name[k];
+        display_name[nlen < 0 ? 0 : nlen] = '\0';
+
+        Framebuffer::DrawString(display_name, bx + 24, by + (bh - 8) / 2, item_fg, item_bg);
+
+        // Katalogi dostają strzałkę ">" po prawej - sygnalizuje kaskadowe submenu
+        if (is_dir) {
+            Framebuffer::DrawString(">", bx + bw - 12, by + (bh - 8) / 2, item_fg, item_bg);
+        }
+
+        if (is_hover && mouse_clicked) {
+            if (is_dir) {
+                if (level + 1 < MAX_MENU_DEPTH) {
+                    if (lvl->open_child_index == i) {
+                        // Ta sama pozycja kliknięta ponownie - zamknij jej submenu
+                        lvl->open_child_index = -1;
+                        menu_open_depth = level + 1;
+                    } else {
+                        RefreshMenuLevel(level + 1, lvl->paths[i]);
+                        StartMenuLevel* child = &menu_levels[level + 1];
+                        child->x = menu_x + menu_w;
+                        int child_h = 8 + child->count * item_h;
+                        if (child_h < 100) child_h = 100;
+                        int child_y = by;
+                        if (child_y + child_h > (int)screen_h - taskbar_h) {
+                            child_y = (int)screen_h - taskbar_h - child_h;
+                        }
+                        if (child_y < 0) child_y = 0;
+                        child->y = child_y;
+                        lvl->open_child_index = i;
+                        menu_open_depth = level + 2;
+                    }
+                }
+                // Jeśli MAX_MENU_DEPTH osiągnięte - katalog pozostaje nieklikalny (brak miejsca na kolejny poziom)
+            } else {
+                extern void ExecAppTask(void*);
+                Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)lvl->paths[i]);
+                menu_open_depth = 0;
+                launched = true;
+            }
+        }
+    }
+    return launched;
 }
 
 void Compositor::Render() {
@@ -483,6 +608,7 @@ void Compositor::Render() {
             start_menu_open = !start_menu_open;
             clicked_start_btn = true;
             if (start_menu_open) RefreshStartMenu();
+            else menu_open_depth = 0;
         }
     }
     
@@ -571,74 +697,44 @@ void Compositor::Render() {
     };
     Framebuffer::DrawString(time_str, tray_item_x, btn_y + (btn_h - 8) / 2, 0x000000, 0xC0C0C0);
     
-    // 4. Draw Start Menu (dynamiczny, pozycje z /usr/bin przez VFS::ListDirectory)
+    // 4. Draw Start Menu (dynamiczny, pozycje z /usr/bin przez VFS::ListDirectory, rekursywnie -
+    //    podkatalogi otwierają kaskadowe submenu, patrz DrawMenuLevel)
     if (start_menu_open) {
         int item_h = 24;
         int menu_w = 220;
-        int list_h = start_menu_entry_count * item_h;
-        int menu_h = 8 + list_h;
-        if (menu_h < 100) menu_h = 100; // miejsce na pionowy baner "OxideOS"
-        int menu_y = screen_h - taskbar_h - menu_h;
 
-        Framebuffer::DrawRect(0, menu_y, menu_w, menu_h, 0xC0C0C0);
-        Framebuffer::DrawRect(0, menu_y, menu_w, 2, 0xFFFFFF); // highlight top
-        Framebuffer::DrawRect(0, menu_y, 2, menu_h, 0xFFFFFF); // highlight left
-        Framebuffer::DrawRect(menu_w - 2, menu_y, 2, menu_h, 0x000000); // shadow right
-        Framebuffer::DrawRect(0, menu_y + menu_h - 2, menu_w, 2, 0x000000); // shadow bottom
+        // Zakotwiczenie poziomu 0: lewy dolny róg, tak jak dawniej (rośnie w górę od taskbara)
+        int list_h = menu_levels[0].count * item_h;
+        int menu_h0 = 8 + list_h;
+        if (menu_h0 < 100) menu_h0 = 100; // miejsce na pionowy baner "OxideOS"
+        menu_levels[0].x = 0;
+        menu_levels[0].y = screen_h - taskbar_h - menu_h0;
 
-        // Pasek Boczny (Win95 style dark blue)
-        Framebuffer::DrawRect(2, menu_y + 2, 32, menu_h - 4, 0x0000A0);
-
-        const char* os_name = "OxideOS";
-        int banner_y = menu_y + menu_h - 80;
-        for (int i = 0; os_name[i]; i++) {
-            // Rysowanie znaków pionowo na pasku
-            Framebuffer::DrawChar(os_name[i], 14, banner_y + i * 10, 0xFFFFFF, 0x0000A0);
-        }
-
-        int current_y = menu_y + 4;
-
-        for (int i = 0; i < start_menu_entry_count; i++) {
-            int bx = 36;
-            int by = current_y;
-            int bw = menu_w - 40;
-            int bh = item_h;
-
-            current_y += bh;
-
-            bool is_hover = (mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh);
-
-            uint32_t item_bg = is_hover ? 0x0000A0 : 0xC0C0C0; // Win95 Hover: Dark Blue
-            uint32_t item_fg = is_hover ? 0xFFFFFF : 0x000000; // Win95 Hover Text: White
-
-            Framebuffer::DrawRect(bx, by, bw, bh, item_bg);
-
-            // Ikona (na razie generyczna - domyslna ikonka okna 16x16)
-            if (icon_bmp) {
-                BMP::Draw(icon_bmp, bx + 4, by + (bh - 16) / 2);
-            }
-
-            // Nazwa pozycji: nazwa pliku bez rozszerzenia ".ELF"
-            char display_name[FS_MAX_NAME];
-            int nlen = 0;
-            while (start_menu_entries[i].name[nlen]) nlen++;
-            if (str_ends_with(start_menu_entries[i].name, ".ELF")) nlen -= 4;
-            for (int k = 0; k < nlen && k < FS_MAX_NAME - 1; k++) display_name[k] = start_menu_entries[i].name[k];
-            display_name[nlen < 0 ? 0 : nlen] = '\0';
-
-            Framebuffer::DrawString(display_name, bx + 24, by + (bh - 8) / 2, item_fg, item_bg);
-
-            if (is_hover && mouse_clicked) {
-                extern void ExecAppTask(void*);
-                Scheduler::CreateTask((void(*)(void*))ExecAppTask, (void*)start_menu_paths[i]);
-                start_menu_open = false;
+        bool app_launched = false;
+        for (int lvl = 0; lvl < menu_open_depth && lvl < MAX_MENU_DEPTH; lvl++) {
+            if (DrawMenuLevel(lvl, mouse_x, mouse_y, mouse_clicked, screen_h, taskbar_h, menu_w, item_h, icon_bmp)) {
+                app_launched = true;
             }
         }
+        if (app_launched) {
+            start_menu_open = false;
+        }
 
-        if (mouse_clicked && !clicked_start_btn) {
-            bool in_menu = (mouse_x >= 0 && mouse_x <= menu_w && mouse_y >= menu_y && mouse_y <= menu_y + menu_h);
-            if (!in_menu) {
+        // Zamknij cale menu tylko gdy klik wypadl poza WSZYSTKIMI otwartymi poziomami
+        if (mouse_clicked && !clicked_start_btn && !app_launched) {
+            bool in_any = false;
+            for (int lvl = 0; lvl < menu_open_depth && lvl < MAX_MENU_DEPTH; lvl++) {
+                int lvl_h = 8 + menu_levels[lvl].count * item_h;
+                if (lvl_h < 100) lvl_h = 100;
+                if (mouse_x >= menu_levels[lvl].x && mouse_x <= menu_levels[lvl].x + menu_w &&
+                    mouse_y >= menu_levels[lvl].y && mouse_y <= menu_levels[lvl].y + lvl_h) {
+                    in_any = true;
+                    break;
+                }
+            }
+            if (!in_any) {
                 start_menu_open = false;
+                menu_open_depth = 0;
             }
         }
     }
