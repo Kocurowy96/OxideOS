@@ -1,0 +1,47 @@
+# Regresja: Panel Sterowania (SETTINGS.ELF, apps/settings/main.c)
+# Zweryfikowane 2026-10-20 (kontener agenta w chmurze, czysta emulacja TCG, bez /dev/kvm).
+#
+# Zakłada świeży rozruch (HELLO.ELF otwarte domyślnie). WAŻNE: pierwszy krok zamyka
+# HELLO.ELF przed otwarciem SETTINGS — patrz komentarz w scenario_calculator.txt / README.md
+# tego katalogu (znany kernel panic przy dwóch jednoczesnych taskach Ring 3).
+#
+# Oczekiwany wynik (obejrzeć zrzuty ekranu po uruchomieniu):
+#   settings_opened.png       - okno "Panel Sterowania" otwarte w (100,100), zakładka Wyglad
+#   settings_dzwiek_tab.png   - zakładka "Dzwiek" aktywna, "Glosnosc: 80%" (wartość domyślna)
+#   settings_volume_up.png    - po dwóch klikach "+" głośności: "Glosnosc: 100%"
+#   settings_mysz_tab.png     - zakładka "Mysz" aktywna, "Czulosc: 125%" (domyślne 100% + 25)
+#   settings_closed.png       - okno zamknięte, powrót do pustego pulpitu
+
+# Zamknij domyślne okno HELLO
+click left 705 293
+wait 1
+
+# Start -> SETTINGS (pozycja 1 w Menu Start)
+click left 34 788
+wait 1
+click left 126 568
+wait 2
+shot settings_opened.png
+
+# Zakładka "Dzwiek"
+click left 172 300
+wait 1
+shot settings_dzwiek_tab.png
+
+# Dwa kliki "+" głośności: 80% -> 90% -> 100%
+click left 332 220
+click left 332 220
+wait 1
+shot settings_volume_up.png
+
+# Zakładka "Mysz" + jeden klik "+" czułości: 100% -> 125%
+click left 172 340
+wait 1
+click left 332 220
+wait 1
+shot settings_mysz_tab.png
+
+# Zamknij okno Panelu Sterowania (przycisk [X])
+click left 633 111
+wait 1
+shot settings_closed.png

@@ -1,0 +1,41 @@
+# Regresja: Menedzer Zadan (TASKMGR.ELF, apps/taskmgr/main.c)
+# Zweryfikowane 2026-10-20 (kontener agenta w chmurze, czysta emulacja TCG, bez /dev/kvm).
+#
+# Zakłada świeży rozruch (HELLO.ELF otwarte domyślnie). WAŻNE: pierwszy krok zamyka
+# HELLO.ELF przed otwarciem TASKMGR — patrz komentarz w scenario_calculator.txt / README.md
+# tego katalogu (znany kernel panic przy dwóch jednoczesnych taskach Ring 3).
+#
+# UWAGA: ten scenariusz CELOWO NIE klika przycisku "Zakoncz" (End task) - zaznaczony
+# wiersz to sam TASKMGR.ELF (pierwszy task na liście w momencie otwarcia), a zakończenie
+# własnego taska przez siebie samego jest scenariuszem nieprzetestowanym/ryzykownym do
+# wpisania na sztywno w automatyczny regression suite. Ten scenariusz sprawdza wyłącznie
+# że lista zadań się wypełnia i że klik w wiersz go zaznacza (podświetlenie) - nie samo
+# kończenie zadania.
+#
+# Oczekiwany wynik (obejrzeć zrzuty ekranu po uruchomieniu):
+#   taskmgr_opened.png        - okno "Menedzer Zadan" otwarte w (300,200), lista zadań
+#                               niepusta (co najmniej Desktop + TASKMGR.ELF)
+#   taskmgr_row_selected.png  - pierwszy wiersz (TASKMGR.ELF) podświetlony na niebiesko
+#                               po kliknięciu
+#   taskmgr_closed.png        - okno zamknięte, powrót do pustego pulpitu
+
+# Zamknij domyślne okno HELLO
+click left 705 293
+wait 1
+
+# Start -> TASKMGR (pozycja 8 w Menu Start)
+click left 34 788
+wait 1
+click left 126 736
+wait 2
+shot taskmgr_opened.png
+
+# Klik pierwszego wiersza listy zadań (zaznaczenie, bez "Zakoncz")
+click left 502 260
+wait 1
+shot taskmgr_row_selected.png
+
+# Zamknij okno Menedzera Zadan (przycisk [X])
+click left 693 211
+wait 1
+shot taskmgr_closed.png

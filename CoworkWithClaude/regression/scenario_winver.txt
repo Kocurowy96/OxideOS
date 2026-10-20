@@ -1,0 +1,29 @@
+# Regresja: O Systemie / WinVer (WINVER.ELF, apps/winver/main.c)
+# Zweryfikowane 2026-10-20 (kontener agenta w chmurze, czysta emulacja TCG, bez /dev/kvm).
+#
+# Zakłada świeży rozruch (HELLO.ELF otwarte domyślnie). WAŻNE: pierwszy krok zamyka
+# HELLO.ELF przed otwarciem WINVER — patrz komentarz w scenario_calculator.txt / README.md
+# tego katalogu (znany kernel panic przy dwóch jednoczesnych taskach Ring 3).
+#
+# Oczekiwany wynik (obejrzeć zrzuty ekranu po uruchomieniu):
+#   winver_opened.png  - okno "O Systemie (WINVER)" otwarte w (400,200): baner "OxideOS",
+#                        tekst "System operacyjny OxideOS" / "Wersja jadra 1.0.0" /
+#                        "Pamiec fizyczna RAM: ... MB (Wolne: ... MB)", przycisk "OK"
+#   winver_closed.png  - po kliknięciu "OK": okno zamknięte, powrót do pustego pulpitu
+#                        (sprawdza że przycisk OK faktycznie zamyka okno, nie tylko [X])
+
+# Zamknij domyślne okno HELLO
+click left 705 293
+wait 1
+
+# Start -> WINVER (pozycja 5 w Menu Start)
+click left 34 788
+wait 1
+click left 126 664
+wait 2
+shot winver_opened.png
+
+# Zamknij okno przyciskiem "OK" (nie [X] — inna ścieżka kodu niż pozostałe scenariusze)
+click left 652 552
+wait 1
+shot winver_closed.png

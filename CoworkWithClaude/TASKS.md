@@ -492,12 +492,6 @@ Do przetestowania w prawdziwym GUI.
   2026-10-16 (decydujący test to wciąż realny sprzęt/KVM, niedostępny w tym kontenerze)
   — dopisane tu wyłącznie jako tani, dodatkowy punkt danych, bez przerywania zadania
   submenu dla pogłębiania tego dochodzenia (poza zakresem tej sesji).
-- [ ] **Formalny zestaw regresji UI** — spisać istniejące ad-hoc scenariusze
-  `headless_interact.sh` (klikanie Kalkulatora/WinVer/Ustawień/Kalendarza/Notatnika/
-  Menedżera Zadań, współrzędne liczone z `sys_create_window` + layoutu kontrolek, patrz
-  `docs/gui.md`) jako pliki w repo (np. `CoworkWithClaude/regression/scenario_<apka>.txt`)
-  zamiast wyliczać je od zera przy każdej sesji. Jeden scenariusz na apkę, uruchamiany jako
-  checklist przed większym mergem/milestone'em.
 - [ ] **Biblioteka UI — Faza 5: Paint** — `apps/paint/main.c` jako jedyna pozostała apka z
   przyciskami nadal ręcznie robi hit-testing w `OnMouseClick` (sprawdzone w kodzie, nie
   zgadywane). Ten sam wzorzec co Kalendarz (Faza 3, patrz `docs/gui.md`): siatka 32×32
@@ -535,6 +529,38 @@ Do przetestowania w prawdziwym GUI.
 
 ## Zrobione
 
+- [x] (2026-10-20) **Formalny zestaw regresji UI** — 6 zweryfikowanych scenariuszy
+  `scripts/headless_interact.sh` w `CoworkWithClaude/regression/` (`scenario_calculator.txt`,
+  `scenario_settings.txt`, `scenario_calendar.txt`, `scenario_notepad.txt`,
+  `scenario_taskmgr.txt`, `scenario_winver.txt`), plus `README.md` tego katalogu z wzorami na
+  współrzędne (przycisk Start, pozycje Menu Start, przycisk [X] okna) i instrukcją
+  uruchomienia. Współrzędne wyliczone z kodu (`kernel/gui/compositor.cpp` dla Menu
+  Start/taskbar/zamykania okien, `apps/*/main.c` dla pozycji okna i kontrolek każdej apki) —
+  **nie zgadywane**. Każdy scenariusz **faktycznie uruchomiony w tej sesji** (nie tylko
+  napisany teoretycznie) i zweryfikowany przez zrzuty ekranu: Kalkulator liczy poprawnie
+  (2+3=5), Ustawienia zmieniają głośność/czułość myszy na ekranie, Kalendarz nawiguje
+  miesiącami i przyjmuje notatkę, Notatnik przyjmuje wpisywany tekst, Menedżer Zadań
+  zaznacza wiersz, WinVer zamyka się przyciskiem OK (osobna ścieżka kodu niż [X]).
+  **Odkryta przy okazji ważna rzecz do zapamiętania** (opisana w `README.md` tego katalogu):
+  rozdzielczość ekranu w tym środowisku to w rzeczywistości **1280×800**, nie 1024×768 jak
+  sugerowałby rozmiar tapet w `assets/` — każdy przyszły scenariusz bazujący na
+  `screen_w`/`screen_h` powinien to uwzględnić (współrzędne wewnątrz okien apek są tym
+  nieczułe, bo okna mają stałą pozycję przekazywaną przez samą apkę).
+  **Celowo pominięte z automatyzacji**: `scenario_taskmgr.txt` NIE klika "Zakoncz" (ryzyko
+  zakończenia niewłaściwego zadania przy automatycznym teście) — tylko zaznaczenie wiersza.
+  **Każdy scenariusz zaczyna się od zamknięcia domyślnego okna HELLO** — inaczej natychmiast
+  odtwarza się znany, osobno śledzony kernel panic (patrz "Do zrobienia teraz" wyżej) —
+  to ograniczenie jest wyjaśnione w `README.md` i w komentarzu każdego pliku, nie jest
+  próbą obejścia/ukrycia tego buga.
+  Przy okazji zaobserwowana (nie naprawiana w tym zadaniu, poza zakresem) osobna drobna
+  usterka: `type` czasem gubi pojedyncze znaki przy wpisywaniu tekstu (zaobserwowane w
+  `CALENDAR.ELF`, nie w `NOTEPAD.ELF` w tej samej sesji) — opisane w `README.md` jako
+  zastrzeżenie przy czytaniu zrzutów, nie jako nowa pozycja na liście (zbyt mało zbadane
+  żeby wiedzieć czy to apka, sterownik klawiatury, czy sam `qmp_input.py`/timing testu).
+  Weryfikacja: czysty rebuild (`rm -rf build && cmake -B build -S . && cmake --build build`)
+  bez błędów, `scripts/test_headless.sh` PASS, każdy z 6 plików scenariusza uruchomiony
+  osobno wprost z `CoworkWithClaude/regression/` (nie z kopii roboczej) przez
+  `scripts/headless_interact.sh`, wszystkie zrzuty ekranu obejrzane i opisane wyżej.
 - [x] (2026-10-19) **Menu Start: rekursywne submenu dla podfolderów w `/usr/bin`** — pozycja
   była płaska lista z `VFS::ListDirectory` (`RefreshStartMenu`, `kernel/gui/compositor.cpp`),
   katalogi były już zbierane do listy ale klikalne tylko jako (błędnie) próba uruchomienia ich

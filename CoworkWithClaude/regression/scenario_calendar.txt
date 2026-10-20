@@ -1,0 +1,47 @@
+# Regresja: Kalendarz (CALENDAR.ELF, apps/calendar/main.c)
+# Zweryfikowane 2026-10-20 (kontener agenta w chmurze, czysta emulacja TCG, bez /dev/kvm).
+#
+# Zakłada świeży rozruch (HELLO.ELF otwarte domyślnie). WAŻNE: pierwszy krok zamyka
+# HELLO.ELF przed otwarciem CALENDAR — patrz komentarz w scenario_calculator.txt / README.md
+# tego katalogu (znany kernel panic przy dwóch jednoczesnych taskach Ring 3).
+#
+# UWAGA: siatka dni (konkretne współrzędne komórek dnia) zależy od dnia tygodnia 1. dnia
+# bieżącego miesiąca (RTC hosta) - dlatego ten scenariusz NIE klika konkretnego dnia w
+# siatce, tylko używa deterministycznych elementów (strzałki nawigacji miesiąca, obszar
+# planera notatek pod spodem) które są na stałej pozycji niezależnie od daty.
+#
+# Oczekiwany wynik (obejrzeć zrzuty ekranu po uruchomieniu):
+#   calendar_opened.png      - okno "Kalendarz" otwarte w (250,80), bieżący miesiąc/rok
+#   calendar_next_month.png  - po kliknięciu ">" numer miesiąca zwiększony o 1 (grudzień -> styczeń+rok+1)
+#   calendar_notes.png        - po kliknięciu "<" (powrót do pierwotnego miesiąca) i wpisaniu
+#                               tekstu w planerze notatek: widoczne "Test regresji"
+#   calendar_closed.png      - okno zamknięte, powrót do pustego pulpitu
+
+# Zamknij domyślne okno HELLO
+click left 705 293
+wait 1
+
+# Start -> CALENDAR (pozycja 4 w Menu Start)
+click left 34 788
+wait 1
+click left 126 640
+wait 2
+shot calendar_opened.png
+
+# Nawigacja: nastepny miesiac (">")
+click left 497 115
+wait 1
+shot calendar_next_month.png
+
+# Powrot do pierwotnego miesiaca ("<"), klik w planerze notatek, wpisanie tekstu
+click left 267 115
+wait 1
+click left 382 350
+type Test regresji
+wait 1
+shot calendar_notes.png
+
+# Zamknij okno Kalendarza (przycisk [X])
+click left 503 91
+wait 1
+shot calendar_closed.png
