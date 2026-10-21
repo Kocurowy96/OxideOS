@@ -96,6 +96,8 @@ void gui_form_init(Form* form, int win_id, uint32_t* fb, int win_w, int win_h, u
     form->on_tick = NULL;
     form->active_tab = 0;
     form->on_key = NULL;
+    form->last_click_x = 0;
+    form->last_click_y = 0;
 }
 
 Control* gui_form_add_control(Form* form, int x, int y, int w, int h, const char* text,
@@ -153,6 +155,8 @@ void gui_form_run(Form* form) {
 
         if (sys_get_event(form->win_id, &ev)) {
             if (ev.type == GUI_EVENT_MOUSE_CLICK) {
+                form->last_click_x = ev.x;
+                form->last_click_y = ev.y;
                 for (int i = 0; i < form->control_count; i++) {
                     Control* c = &form->controls[i];
                     if (c->on_click && ev.x >= c->x && ev.x <= c->x + c->w &&

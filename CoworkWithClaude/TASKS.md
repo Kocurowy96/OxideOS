@@ -492,14 +492,6 @@ Do przetestowania w prawdziwym GUI.
   2026-10-16 (decydujący test to wciąż realny sprzęt/KVM, niedostępny w tym kontenerze)
   — dopisane tu wyłącznie jako tani, dodatkowy punkt danych, bez przerywania zadania
   submenu dla pogłębiania tego dochodzenia (poza zakresem tej sesji).
-- [ ] **Biblioteka UI — Faza 5: Paint** — `apps/paint/main.c` jako jedyna pozostała apka z
-  przyciskami nadal ręcznie robi hit-testing w `OnMouseClick` (sprawdzone w kodzie, nie
-  zgadywane). Ten sam wzorzec co Kalendarz (Faza 3, patrz `docs/gui.md`): siatka 32×32
-  pikseli jako jedna kontrolka z własnym `ControlRenderFn` obsługującym kliki wewnątrz
-  siebie (jak planer notatek Kalendarza), przyciski palety kolorów/wyboru narzędzia jako
-  zwykłe `Control`e. Model zdarzeń się zgadza — Paint już dziś reaguje tylko na dyskretne
-  kliki (`GUI_EVENT_MOUSE_CLICK`), nie na ciągłe przeciąganie, więc nic nowego nie trzeba
-  dodawać do `widgets.c`.
 - [ ] **Drobny bug: Menedżer Zadań pokazuje pusty wiersz dla DesktopTask** — znaleziona
   przyczyna: `Scheduler::CreateTask((void(*)(void*))DesktopTask, nullptr)` w
   `kernel/main.cpp` przekazuje `nullptr`, a `Scheduler::CreateTask` (`kernel/proc/sched.cpp`,
@@ -529,6 +521,38 @@ Do przetestowania w prawdziwym GUI.
 
 ## Zrobione
 
+- [x] (2026-10-21) **Biblioteka UI — Faza 5: Paint** — `apps/paint/main.c` przepisany na
+  `Form`/`Control`, dokładnie jak planowano: siatka 32×32 to JEDNA kontrolka z własnym
+  `RenderGrid` + `OnGridClick`, paleta 8 kolorów to 8 osobnych `Control`i (własny
+  `RenderSwatch`/`OnSwatchClick`, `user_data` = indeks koloru, jak `RenderDayCell` Kalendarza),
+  GUMKA jako `Control` z własnym renderem (podświetlenie gdy aktywna, identyczne pikselowo z
+  oryginałem), CZYSC/ZAPISZ jako zwykłe `gui_form_add_button` (styl 1:1 z już istniejącym
+  `ButtonRender`, bo oryginalny `DrawAppButton` Painta był pikselowo tym samym wyglądem).
+  **Jedna, addytywna zmiana w bibliotece** (`apps/libgui/widgets.h`/`.c`) — `Form` dostał
+  `last_click_x`/`last_click_y`, ustawiane przez `gui_form_run` tuż przed hit-testem na każdy
+  klik: `ControlClickFn` (`void (*)(Control*)`) nie przenosi lokalnych współrzędnych kliku (do
+  dziś nie było to potrzebne — każda komórka Kalendarza to osobny, mały `Control`), a siatka
+  Painta (1024 komórek, daleko ponad `FORM_MAX_CONTROLS`=40) musi być jedną dużą kontrolką
+  obsługującą kliki wewnątrz siebie — stąd te dwa nowe pola, czytane wprost z globalnego
+  `Form form` przez `OnGridClick` (`form.last_click_x - self->x` itd.), zero zmian w
+  `ControlClickFn` i zero zmian w żadnej już zmigrowanej apce (ten sam wzorzec dodawania co
+  `on_tick`/`on_key`/`active_tab` w poprzednich fazach). `scripts/build.sh`: `PAINT.ELF`
+  teraz też linkuje `apps/libgui/widgets.o` (wcześniej nie było potrzeby, Paint nie używał
+  `widgets.c`).
+  **Zweryfikowane**: czysty rebuild kernela (`cmake --build build`, bez nowych ostrzeżeń) +
+  `scripts/build.sh` (wszystkie apki, w tym `PAINT.ELF`, kompilują się bez nowych ostrzeżeń) +
+  pełny `scripts/test_headless.sh` dalej PASS (normalny rozruch bez panic) + nowy, dedykowany
+  scenariusz `CoworkWithClaude/regression/scenario_paint.txt` (patrz `regression/README.md`)
+  **faktycznie uruchomiony w tej sesji** przez `scripts/headless_interact.sh` i zweryfikowany
+  przez zrzuty ekranu: wybór czerwonego koloru z palety (ramka zaznaczenia), narysowanie 3
+  czerwonych pikseli kliknięciem w siatkę (dokładnie w oczekiwanych komórkach — potwierdza że
+  `last_click_x/y` → lokalna komórka liczy się poprawnie), przełączenie na GUMKA (ramka
+  zaznaczenia przeskakuje), CZYSC (płótno wraca do czystej bieli), ZAPISZ (log serialowy:
+  `Ext2: File written successfully`, bez błędu), zamknięcie okna (czysty powrót do pulpitu).
+  Zero regresji w innych apkach (nie dotykane w tej sesji). Ten scenariusz był celowo
+  odłożony przez sesję 2026-10-20 (patrz notatka w `regression/README.md`) do PO tej migracji
+  — teraz dopisany, więc "Formalny zestaw regresji UI" niżej faktycznie obejmuje 7 apek, nie 6
+  (plik `README.md` tej listy już o tym wspomina, nie powtarzane tu osobno).
 - [x] (2026-10-20) **Formalny zestaw regresji UI** — 6 zweryfikowanych scenariuszy
   `scripts/headless_interact.sh` w `CoworkWithClaude/regression/` (`scenario_calculator.txt`,
   `scenario_settings.txt`, `scenario_calendar.txt`, `scenario_notepad.txt`,

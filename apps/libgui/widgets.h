@@ -38,6 +38,15 @@ struct Form {
                          // po gui_form_init) - apka sama zarzadza swoim tekstem/kursorem, biblioteka nie
                          // ma jeszcze wlasnej kontrolki pola tekstowego (patrz PLAN_ui_library.md, do
                          // zaprojektowania osobno przy Notatniku).
+    int last_click_x, last_click_y;  // ustawiane przez gui_form_run na WSPOLRZEDNE EKRANOWE kliku,
+                         // tuz przed hit-testem/on_click (Faza 5) - addytywne, jak on_tick/on_key.
+                         // ControlClickFn nie przenosi lokalnych wspolrzednych kliku (tylko self), bo
+                         // dotad zadna kontrolka tego nie potrzebowala (kazda komorka Kalendarza to
+                         // osobny, maly Control) - siatka 32x32 Painta (Faza 5) jest jedna duza
+                         // kontrolka obslugujaca kliki WEWNATRZ siebie, wiec jej on_click odejmuje
+                         // self->x/self->y od tych pol zeby policzyc lokalna komorke (patrz
+                         // apps/paint/main.c, OnGridClick) - zero zmian w sygnaturze ControlClickFn,
+                         // wiec zero zmian w kazdej juz zmigrowanej apce.
 };
 
 void gui_form_init(Form* form, int win_id, uint32_t* fb, int win_w, int win_h, uint32_t bg_color);

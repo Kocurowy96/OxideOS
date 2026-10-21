@@ -29,7 +29,7 @@ gcc -c apps/calculator/main.c -o apps/calculator/main.o -ffreestanding -O2 -Wall
 ld -nostdlib -Ttext 0x600000 apps/calculator/main.o apps/libgui/gui.o apps/libgui/widgets.o -o CALC.ELF -no-pie
 
 gcc -c apps/paint/main.c -o apps/paint/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
-ld -nostdlib -Ttext 0x700000 apps/paint/main.o apps/libgui/gui.o -o PAINT.ELF -no-pie
+ld -nostdlib -Ttext 0x700000 apps/paint/main.o apps/libgui/gui.o apps/libgui/widgets.o -o PAINT.ELF -no-pie
 
 gcc -c apps/calendar/main.c -o apps/calendar/main.o -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx -msoft-float -I apps/libgui
 ld -nostdlib -Ttext 0x800000 apps/calendar/main.o apps/libgui/gui.o apps/libgui/widgets.o -o CALENDAR.ELF -no-pie

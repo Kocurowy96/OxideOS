@@ -1,0 +1,70 @@
+# Regresja: Paint (PAINT.ELF, apps/paint/main.c)
+# Zweryfikowane 2026-10-21 (kontener agenta w chmurze, czysta emulacja TCG, bez /dev/kvm) -
+# zaraz po migracji Painta na Form/Control (Biblioteka UI - Faza 5, patrz TASKS.md).
+#
+# Zaklada swiezy rozruch (HELLO.ELF otwarte domyslnie, jak zawsze zaraz po boot).
+# WAZNE: pierwszy krok zamyka HELLO.ELF (klik [X] jego okna) ZANIM otworzymy cokolwiek
+# z Menu Start - rownoczesne dzialanie HELLO + druga apka Ring 3 odtwarza znany,
+# niezbadany do konca kernel panic (patrz CoworkWithClaude/TASKS.md, pozycja "Zbadac i
+# naprawic realny kernel panic..."). Nie usuwac/nie przestawiac tego kroku.
+#
+# Oczekiwany wynik (obejrzec zrzuty ekranu po uruchomieniu):
+#   paint_opened.png         - okno "Paint" otwarte w (200,50), biale platno, paleta 8
+#                               kolorow, GUMKA aktywna (current_color domyslnie = 1/biale)
+#   paint_red_selected.png   - czerwony kwadracik palety ma czarna ramke zaznaczenia
+#   paint_drawn.png          - 3 czerwone piksele narysowane na platnie (siatka 32x32,
+#                               jedna kontrolka Form obslugujaca kliki wewnatrz siebie -
+#                               patrz widgets.h Form::last_click_x/y)
+#   paint_eraser_selected.png - GUMKA ma ramke zaznaczenia (current_color wrocil na 1)
+#   paint_cleared.png        - platno z powrotem w pelni biale po CZYSC
+#   paint_saved.png          - brak widocznej roznicy (ZAPISZ pisze do pliku, nie zmienia
+#                               ekranu) - sprawdzic zamiast tego w logu serialowym linie
+#                               "Ext2: File written successfully" (bez bledu zapisu)
+#   paint_closed.png         - okno zamkniete, powrot do pustego pulpitu
+
+# Zamknij domyslne okno HELLO (przycisk [X], okno HELLO.ELF jest w (312,284) 400x200)
+click left 705 293
+wait 1
+
+# Start -> PAINT (pozycja 3 w Menu Start, patrz README.md tego katalogu za wzor na wspolrzedne)
+click left 34 788
+wait 1
+click left 126 616
+wait 2
+shot paint_opened.png
+
+# wybierz czerwony kafelek palety (indeks 2, srodek kafelka w oknie Painta: lokalne (22,16)
+# -> ekran (202+22, 70+16) = (224,86)... policzone faktycznie jako px=12+2*28=68,
+# srodek (68+10, 246+10) = (78,256) lokalnie -> ekran (202+78, 70+256) = (280,326))
+click left 280 326
+wait 1
+shot paint_red_selected.png
+
+# narysuj 3 piksele czerwonym (siatka zaczyna sie lokalnie w (34,8), komorka 6x6 - komorka
+# (10,10): lokalne (34+10*6+3, 8+10*6+3) = (97,71) -> ekran (299,141); dwie sasiednie komorki
+# obok dla widocznosci)
+click left 299 141
+click left 305 141
+click left 299 147
+wait 1
+shot paint_drawn.png
+
+# wybierz GUMKA (eraser, ustawia current_color z powrotem na 1/biale)
+click left 244 352
+wait 1
+shot paint_eraser_selected.png
+
+# CZYSC - wyczysc cale platno na bialo
+click left 317 352
+wait 1
+shot paint_cleared.png
+
+# ZAPISZ - zapisz /DOCS/PAINT.RAW (sprawdzic log serialowy, nie zrzut ekranu)
+click left 397 352
+wait 1
+shot paint_saved.png
+
+# Zamknij okno Painta (przycisk [X], okno 260x300 w (200,50) -> [X] w (446..460, 54..68))
+click left 453 61
+wait 1
+shot paint_closed.png

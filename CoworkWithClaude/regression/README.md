@@ -85,3 +85,11 @@ zgubiony znak nie oznacza realnej regresji w samej apce.
 | `scenario_notepad.txt` | NOTEPAD.ELF | Otwarcie, wpisanie tekstu w obszarze edycji, zamknięcie |
 | `scenario_taskmgr.txt` | TASKMGR.ELF | Otwarcie, zaznaczenie wiersza zadania (BEZ klikania "Zakoncz" — patrz komentarz w pliku), zamknięcie |
 | `scenario_winver.txt` | WINVER.ELF | Otwarcie, odczyt banera/wersji/RAM, zamknięcie przyciskiem OK |
+| `scenario_paint.txt` | PAINT.ELF | Otwarcie, wybór koloru z palety, rysowanie na siatce 32×32, GUMKA, CZYSC, ZAPISZ (log serialowy), zamknięcie |
+
+**Dopisane 2026-10-21, zaraz po migracji Painta na `Form`/`Control` (Biblioteka UI — Faza 5,
+patrz `TASKS.md`)** — zgodnie z notatką z sesji 2026-10-20 wyżej, która celowo odłożyła ten
+scenariusz do PO tamtej migracji. Jedyna apka w tym zestawie, której siatka 32×32 to JEDNA
+kontrolka obsługująca kliki wewnątrz siebie przez nowe, addytywne `Form::last_click_x/y`
+(patrz `apps/libgui/widgets.h`) zamiast osobnego `Control` na komórkę (1024 komórek daleko
+przekracza `FORM_MAX_CONTROLS`).
