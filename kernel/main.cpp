@@ -246,7 +246,7 @@ extern "C" void _start(void) {
     Scheduler::CreateTask((void (*)(void*))ExecAppTask, (void*)"/usr/bin/HELLO.ELF");
 
     // Start desktop rendering task
-    Scheduler::CreateTask((void (*)(void*))DesktopTask, nullptr);
+    Scheduler::CreateTask((void (*)(void*))DesktopTask, (void*)"Desktop");
     
     PIT::Init(100); // 100 Hz = 10ms tick
 

@@ -492,13 +492,6 @@ Do przetestowania w prawdziwym GUI.
   2026-10-16 (decydujący test to wciąż realny sprzęt/KVM, niedostępny w tym kontenerze)
   — dopisane tu wyłącznie jako tani, dodatkowy punkt danych, bez przerywania zadania
   submenu dla pogłębiania tego dochodzenia (poza zakresem tej sesji).
-- [ ] **Drobny bug: Menedżer Zadań pokazuje pusty wiersz dla DesktopTask** — znaleziona
-  przyczyna: `Scheduler::CreateTask((void(*)(void*))DesktopTask, nullptr)` w
-  `kernel/main.cpp` przekazuje `nullptr`, a `Scheduler::CreateTask` (`kernel/proc/sched.cpp`,
-  ok. linii 74-79) używa tego samego `arg` do wypełnienia `Task::name` — stąd pusta nazwa.
-  Fix: przekazać `"Desktop"` zamiast `nullptr` (`DesktopTask` i tak nie używa swojego `arg`,
-  sprawdzone w `kernel/main.cpp`). Zweryfikować przez `headless_interact.sh` otwierającym
-  Menedżera Zadań.
 - [ ] **Zawodne klikanie przy wielu oknach — konkretna, zawężona poprawka** (obserwacja już
   wcześniej w tym pliku, teraz z kierunkiem rozwiązania): `kernel/gui/compositor.cpp` ustawia
   `mouse_clicked = mouse_left && !prev_mouse_left` raz na klatkę — przy wolniejszym renderze
@@ -521,6 +514,16 @@ Do przetestowania w prawdziwym GUI.
 
 ## Zrobione
 
+- [x] (2026-10-22) **Drobny bug: Menedżer Zadań pokazuje pusty wiersz dla DesktopTask — naprawiony**.
+  `kernel/main.cpp` wołało `Scheduler::CreateTask((void(*)(void*))DesktopTask, nullptr)` — a
+  `Scheduler::CreateTask` (`kernel/proc/sched.cpp`) kopiuje ten sam `arg` wprost do
+  `Task::name`, stąd pusty wiersz w Menedżerze Zadań. Fix jednolinijkowy: `nullptr` →
+  `(void*)"Desktop"` (`DesktopTask` samo nigdy nie czyta swojego `arg`, sprawdzone w kodzie —
+  bezpieczne). Zweryfikowane: czysty rebuild bez błędów, pełny `scripts/test_headless.sh`
+  PASS (normalny rozruch, brak panic), i wizualnie przez istniejący
+  `CoworkWithClaude/regression/scenario_taskmgr.txt` (`headless_interact.sh`) — zrzut ekranu
+  `taskmgr_opened.png` potwierdza wiersz `2  Desktop` zamiast pustego miejsca obok
+  `/usr/bin/TASKMGR.ELF`, zaznaczanie wiersza dalej działa poprawnie.
 - [x] (2026-10-21) **Biblioteka UI — Faza 5: Paint** — `apps/paint/main.c` przepisany na
   `Form`/`Control`, dokładnie jak planowano: siatka 32×32 to JEDNA kontrolka z własnym
   `RenderGrid` + `OnGridClick`, paleta 8 kolorów to 8 osobnych `Control`i (własny
