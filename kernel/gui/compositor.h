@@ -32,4 +32,9 @@ private:
     // Zmienne stanu GUI
     static bool prev_mouse_left;
     static bool start_menu_open;
+
+    // Zatrzaśnięte zbocze kliknięcia (>0 = traktuj jak kliknięcie) - przy wolniejszym
+    // renderze (dużo okien) jednoklatkowe porównanie mouse_left/prev_mouse_left potrafi
+    // przegapić krótkie zbocze, patrz Render().
+    static int pending_click_frames;
 };

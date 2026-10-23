@@ -492,15 +492,6 @@ Do przetestowania w prawdziwym GUI.
   2026-10-16 (decydujący test to wciąż realny sprzęt/KVM, niedostępny w tym kontenerze)
   — dopisane tu wyłącznie jako tani, dodatkowy punkt danych, bez przerywania zadania
   submenu dla pogłębiania tego dochodzenia (poza zakresem tej sesji).
-- [ ] **Zawodne klikanie przy wielu oknach — konkretna, zawężona poprawka** (obserwacja już
-  wcześniej w tym pliku, teraz z kierunkiem rozwiązania): `kernel/gui/compositor.cpp` ustawia
-  `mouse_clicked = mouse_left && !prev_mouse_left` raz na klatkę — przy wolniejszym renderze
-  (dużo okien) krótkie zbocze kliknięcia potrafi wypaść między próbkowaniami. Zamiast
-  jednoklatkowego porównania, zatrzasnąć wykryte zbocze na 2-3 kolejne klatki (prosty licznik
-  "pending click", kasowany po pierwszym faktycznym zużyciu w hit-teście). Zweryfikować tym
-  samym scenariuszem co przy oryginalnej obserwacji (Faza 3c ext2: 4-5 okien naraz,
-  `headless_interact.sh`) — klik nie powinien już ginąć.
-
 ## Do przegadania
 
 - [ ] **Sieć Faza 7 — syscalle/API żeby userspace mogło używać sieci**. Dziś cały stos
@@ -514,6 +505,41 @@ Do przetestowania w prawdziwym GUI.
 
 ## Zrobione
 
+- [x] (2026-10-23) **Zawodne klikanie przy wielu oknach — naprawione** (`kernel/gui/compositor.cpp`).
+  Dokładnie wzorzec zaproponowany w poprzedniej notatce: zamiast jednoklatkowego porównania
+  `mouse_clicked = mouse_left && !prev_mouse_left` (gdzie `mouse_left` jest ustawiane
+  asynchronicznie przez przerwanie PS/2, więc krótkie zbocze mogło wypaść między próbkowaniami
+  `Render()` przy wolniejszym renderze), dodany nowy statyczny licznik `Compositor::pending_click_frames`
+  (`compositor.h`): wykryte zbocze ustawia go na 3, a każda klatka z `pending_click_frames > 0`
+  jest traktowana jako `mouse_clicked`. Każde faktyczne miejsce "zużycia" kliknięcia w hit-teście
+  (4 miejsca w obsłudze kliknięcia w okno: [X]/minimalizuj/przeciąganie paska tytułu/klik we
+  wnętrze; przycisk Start; przycisk okna na pasku zadań; pozycja Menu Start — `DrawMenuLevel`
+  dostał nowy parametr `bool* out_consumed`, ustawiany też dla otwarcia/zamknięcia submenu, nie
+  tylko uruchomienia apki; zamknięcie menu klikiem na zewnątrz) ustawia teraz lokalną flagę
+  `click_consumed = true` — na końcu `Render()` zeruje ona od razu `pending_click_frames` (żeby
+  ta sama fizyczna klik nie powtórzyła akcji na kolejnych 2-3 klatkach), a jeśli nic nie
+  skonsumowało kliku w danej klatce, licznik po prostu maleje o 1 (naturalne wygaśnięcie po 3
+  klatkach bez akcji, np. klik na pusty pulpit).
+  **Zweryfikowane**: czysty rebuild (zero nowych ostrzeżeń w `compositor.cpp`/`.h`), pełny
+  `scripts/test_headless.sh` PASS (normalny rozruch, brak panic). Dwa istniejące scenariusze
+  `headless_interact.sh` z `CoworkWithClaude/regression/` ponownie uruchomione i sprawdzone
+  zrzutami ekranu: `scenario_calculator.txt` (seria 4 szybkich kliknięć w siatkę przycisków:
+  2+3= poprawnie pokazuje "5", potem zamknięcie przyciskiem [X] — czysty powrót do pulpitu, log
+  serialowy potwierdza DOKŁADNIE jedno uruchomienie CALC.ELF, bez podwójnego odpalenia) i
+  `scenario_taskmgr.txt` (klik w wiersz listy = poprawne zaznaczenie, potem Zakończ — czysty
+  powrót do pulpitu). Oba PASS bez regresji — nowa logika konsumpcji nie powoduje podwójnego
+  wyzwalania akcji (otwarcia/zamknięcia menu, launch apki, minimalizacji) mimo że klik żyje
+  teraz przez kilka klatek.
+  **Czego NIE udało się zweryfikować w tej sesji, uczciwie odnotowane**: oryginalna obserwacja
+  tego buga pochodziła ze scenariusza z 4-5 OTWARTYMI RAZEM oknami (Faza 3c ext2) — nie dało się
+  bezpiecznie odtworzyć tego dokładnie w tej sesji, bo **≥2 jednocześnie aktywne taski Ring 3
+  odtwarzają inny, osobny, wciąż niezbadany do końca kernel panic** (patrz pozycja wyżej w tym
+  pliku i `CoworkWithClaude/regression/README.md`, który z tego samego powodu świadomie
+  ogranicza każdy scenariusz do jednej apki na raz). Celowo NIE ryzykowano tej paniki tylko po
+  to żeby przetestować ten, osobny fix — weryfikacja oparta więc na scenariuszach
+  jedno-aplikacyjnych, które i tak intensywnie ćwiczą tę samą ścieżkę kodu (wielokrotne szybkie
+  kliknięcia w `Render()`). Jeśli po naprawieniu kernel panica (wyżej) ktoś będzie chciał
+  dodać scenariusz z realnie wieloma oknami naraz, ta ścieżka jest już bezpieczna do przetestowania.
 - [x] (2026-10-22) **Drobny bug: Menedżer Zadań pokazuje pusty wiersz dla DesktopTask — naprawiony**.
   `kernel/main.cpp` wołało `Scheduler::CreateTask((void(*)(void*))DesktopTask, nullptr)` — a
   `Scheduler::CreateTask` (`kernel/proc/sched.cpp`) kopiuje ten sam `arg` wprost do

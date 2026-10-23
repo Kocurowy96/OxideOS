@@ -250,6 +250,7 @@ void Compositor::HandleKeyPress(char c) {
 
 bool Compositor::prev_mouse_left = false;
 bool Compositor::start_menu_open = false;
+int Compositor::pending_click_frames = 0;
 
 static void DrawButton(int x, int y, int w, int h, const char* text, bool pressed) {
     Framebuffer::DrawRect(x, y, w, h, 0xC0C0C0);
@@ -282,8 +283,12 @@ static void DrawButton(int x, int y, int w, int h, const char* text, bool presse
 // uruchomienie apki (.ELF) albo podświetlenie już otwartego submenu.
 // Zwraca true jeśli kliknięcie uruchomiło apkę - wywołujący (Render, ma dostęp do
 // prywatnego Compositor::start_menu_open) powinien w tym wypadku zamknąć całe menu.
+// out_consumed ustawiane na true, gdy klik trafił w jakąkolwiek pozycję menu (otwarcie/
+// zamknięcie submenu też się liczy, nie tylko uruchomienie apki) - Render() na tej
+// podstawie zwalnia zatrzaśnięte zbocze kliknięcia (pending_click_frames).
 static bool DrawMenuLevel(int level, int mouse_x, int mouse_y, bool mouse_clicked,
-                           uint32_t screen_h, int taskbar_h, int menu_w, int item_h, void* icon_bmp) {
+                           uint32_t screen_h, int taskbar_h, int menu_w, int item_h, void* icon_bmp,
+                           bool* out_consumed) {
     bool launched = false;
     StartMenuLevel* lvl = &menu_levels[level];
     int list_h = lvl->count * item_h;
@@ -350,6 +355,7 @@ static bool DrawMenuLevel(int level, int mouse_x, int mouse_y, bool mouse_clicke
         }
 
         if (is_hover && mouse_clicked) {
+            *out_consumed = true;
             if (is_dir) {
                 if (level + 1 < MAX_MENU_DEPTH) {
                     if (lvl->open_child_index == i) {
@@ -404,8 +410,18 @@ void Compositor::Render() {
         }
     }
 
-    bool mouse_clicked = (mouse_left && !prev_mouse_left);
+    // Zatrzaśnij wykryte zbocze kliknięcia na kilka klatek - przy wolniejszym renderze
+    // (dużo okien) mouse_left (ustawiane asynchronicznie przez przerwanie PS/2) może
+    // wrócić do 0 między dwoma próbkowaniami Render(), więc samo porównanie z poprzednią
+    // klatką potrafi przegapić krótkie zbocze. Licznik kasowany od razu po pierwszym
+    // faktycznym zużyciu kliku w hit-teście (click_consumed), żeby nie powtórzyć akcji
+    // na kolejnych klatkach.
+    if (mouse_left && !prev_mouse_left) {
+        pending_click_frames = 3;
+    }
     prev_mouse_left = mouse_left;
+    bool mouse_clicked = pending_click_frames > 0;
+    bool click_consumed = false;
 
     // 1. Clear & Draw Background
     Framebuffer::Clear(0x008080); // Fallback / clear color
@@ -459,13 +475,15 @@ void Compositor::Render() {
                     ev.x = 0; ev.y = 0; ev.key = 0;
                     win->PushEvent(ev);
                 }
+                click_consumed = true;
                 break; // Kończymy obsługę kliknięcia
             }
-            
+
             // Check [_] minimize button (szerokość 14, wysokość 14, obok X)
             if (mouse_x >= win->x + win->width - 34 && mouse_x <= win->x + win->width - 20 &&
                 mouse_y >= win->y + 4 && mouse_y <= win->y + 18) {
                 win->is_minimized = true;
+                click_consumed = true;
                 break; // Zminimalizowano okno
             }
             
@@ -483,6 +501,7 @@ void Compositor::Render() {
                     windows[j] = windows[j + 1];
                 }
                 windows[window_count - 1] = win;
+                click_consumed = true;
                 break; // Uderzyliśmy w najwyższe okno, nie klikaj okien pod nim
             }
             
@@ -504,6 +523,7 @@ void Compositor::Render() {
                     windows[j] = windows[j + 1];
                 }
                 windows[window_count - 1] = win;
+                click_consumed = true;
                 break;
             }
         }
@@ -607,6 +627,7 @@ void Compositor::Render() {
         if (mouse_x >= 0 && mouse_x <= btn_w && mouse_y >= (int)screen_h - taskbar_h && mouse_y <= (int)screen_h) {
             start_menu_open = !start_menu_open;
             clicked_start_btn = true;
+            click_consumed = true;
             if (start_menu_open) RefreshStartMenu();
             else menu_open_depth = 0;
         }
@@ -636,6 +657,7 @@ void Compositor::Render() {
         // Check hover/click na taskbarze
         bool is_hover = (mouse_x >= tb_x && mouse_x <= tb_x + w_btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h);
         if (is_hover && mouse_clicked && !start_menu_open) {
+            click_consumed = true;
             if (is_top && !win->is_minimized) {
                 win->is_minimized = true;
             } else {
@@ -712,7 +734,8 @@ void Compositor::Render() {
 
         bool app_launched = false;
         for (int lvl = 0; lvl < menu_open_depth && lvl < MAX_MENU_DEPTH; lvl++) {
-            if (DrawMenuLevel(lvl, mouse_x, mouse_y, mouse_clicked, screen_h, taskbar_h, menu_w, item_h, icon_bmp)) {
+            if (DrawMenuLevel(lvl, mouse_x, mouse_y, mouse_clicked, screen_h, taskbar_h, menu_w, item_h, icon_bmp,
+                               &click_consumed)) {
                 app_launched = true;
             }
         }
@@ -735,10 +758,21 @@ void Compositor::Render() {
             if (!in_any) {
                 start_menu_open = false;
                 menu_open_depth = 0;
+                click_consumed = true;
             }
         }
     }
-    
+
+    // Zwolnij zatrzaśnięte zbocze kliknięcia od razu po pierwszym faktycznym zużyciu
+    // (żeby ta sama fizyczna klik nie powtórzył akcji na kolejnych klatkach) - jeśli
+    // nic go nie zużyło, niech dożyje jeszcze kilku klatek (patrz komentarz przy
+    // pending_click_frames wyżej) zamiast zgasnąć po jednej.
+    if (click_consumed) {
+        pending_click_frames = 0;
+    } else if (pending_click_frames > 0) {
+        pending_click_frames--;
+    }
+
     // 5. Draw Mouse
     if (mouse_x < 0) mouse_x = 0;
     if (mouse_y < 0) mouse_y = 0;
