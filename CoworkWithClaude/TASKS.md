@@ -492,6 +492,37 @@ Do przetestowania w prawdziwym GUI.
   2026-10-16 (decydujący test to wciąż realny sprzęt/KVM, niedostępny w tym kontenerze)
   — dopisane tu wyłącznie jako tani, dodatkowy punkt danych, bez przerywania zadania
   submenu dla pogłębiania tego dochodzenia (poza zakresem tej sesji).
+  **Postęp (2026-10-26, sesja automatyczna, 9. sesja tego dochodzenia):** jedyny jeszcze
+  niewypróbowany, decydujący test (realny sprzęt/KVM) wciąż niedostępny w tym kontenerze
+  (`/dev/kvm` nie istnieje, sprawdzone na starcie tej sesji) — więc zamiast powtarzać
+  wyczerpany repertuar hipotez w kodzie jądra, użyta nowa technika: wewnętrzny log QEMU
+  (`-d mmu,int,guest_errors`, dodany tylko do lokalnej, nieskomitowanej kopii
+  `scripts/click_gdb_inspect.sh` w tej sesji — w repo się nie zachował), pokazujący co
+  TCG samo zalogowało w momencie dostarczenia wyjątku (`v=0e`), ZANIM jakikolwiek kod
+  gościa (łącznie z `isr_stub_14`) się wykonał — niezależnie od GDB/naszego panic
+  handlera. **3 niezależne odtworzenia tanim, dwuklikowym scenariuszem z sesji 10-19
+  (świeży rozruch, HELLO otwarte, Start → druga apka), ten sam nowy wynik za każdym
+  razem:** w linii `v=0e` zalogowanej przez samo QEMU, `RAX` jest bajt-w-bajt równe
+  `CR2` (`RAX=CR2=0x20df` / `0x12e1` / `0x1cb7` w 3 przebiegach — inne w każdym, zgodnie
+  z timing-zależnym licznikiem pętli, ale ZAWSZE równe sobie w danym przebiegu), podczas
+  gdy wszystkie inne rejestry w tej samej linii (`RCX`, `RDX`, ...) są identyczne między
+  przebiegami. Instrukcja w `RIP 0x400261` to `mov 0x4(%rsp),%eax` (czyta pamięć z
+  `RSP+4`, zapisuje do `EAX`) — więc `CR2` powinno architektonicznie być adresem
+  `RSP+4` (rząd `0x6ffffffffxxx`), a zamiast tego ma małą wartość w zakresie licznika
+  pętli `apps/libgui` (`0..9999`) — **wygląda jak WARTOŚĆ zmiennej `i` z poprzedniej
+  iteracji, nie ADRES jej komórki pamięci**. To dużo bardziej konkretny, odtwarzalny
+  dowód niż cokolwiek z poprzednich 8 sesji (które ustaliły tylko ogólne "CR2 jest
+  matematycznie niezgodne z RIP/RSP") — teraz mamy konkretny mechanizm-kandydat:
+  najprawdopodobniej błąd aliasingu/alokacji rejestrów w generatorze kodu TCG dla
+  sekwencji `cmp+jg+mov [rsp+disp],reg` w ciasnej pętli, nie błąd w kodzie jądra OxideOS
+  (zgodne z i wzmacniające wcześniejszy wynik testu "live breakpoint" z sesji 10-16).
+  **Rekomendacja dla Kocurowy96 niezmieniona, ale teraz z mocniejszym poszlakiem:**
+  odtworzyć na realnym sprzęcie z `-enable-kvm` — jeśli panika nie występuje pod KVM,
+  razem z dzisiejszym dowodem to praktycznie zamyka sprawę jako błąd emulacji TCG (nie
+  bug OxideOS), i zadanie można przenieść do "Zrobione"; jeśli występuje też pod KVM, to
+  obaliłoby tę hipotezę i trzeba wrócić do kodu jądra (ostatnia niewypróbowana ścieżka
+  różnicująca po 9 sesjach). Pełny log z tej sesji w
+  `daily-work-report/summary-26-10-26-0830.md`.
 ## Do przegadania
 
 - [ ] **Sieć Faza 7 — syscalle/API żeby userspace mogło używać sieci**. Dziś cały stos
