@@ -523,6 +523,60 @@ Do przetestowania w prawdziwym GUI.
   obaliłoby tę hipotezę i trzeba wrócić do kodu jądra (ostatnia niewypróbowana ścieżka
   różnicująca po 9 sesjach). Pełny log z tej sesji w
   `daily-work-report/summary-26-10-26-0830.md`.
+  **Postęp (2026-10-27, sesja automatyczna, 10. sesja tego dochodzenia):** `/dev/kvm`
+  wciąż niedostępne w tym kontenerze, więc dalej bez realnego sprzętu. Zamiast powtarzać
+  sesję 9 bez nowych narzędzi, przetestowana KONKRETNA, zawężona wersja jej hipotezy
+  ("błąd aliasingu rejestrów w generatorze kodu TCG DLA SEKWENCJI WIELU INSTRUKCJI w
+  jednym tłumaczonym bloku") przez wymuszenie `-accel tcg,one-insn-per-tb=on` (nowa flaga
+  QEMU 8.2 nieużywana w poprzednich 9 sesjach) — w tym trybie TCG tłumaczy KAŻDĄ
+  instrukcję gościa jako WŁASNY, osobny blok (TB), więc aliasing/alokacja rejestrów
+  WSPÓLNA DLA WIELU INSTRUKCJI (dokładny mechanizm-kandydat z sesji 9) jest architektonicznie
+  niemożliwa w tym trybie — czysty, jednoznaczny test różnicujący, bez potrzeby realnego
+  sprzętu.
+  **Pierwsza pułapka metodologiczna (odnotowana uczciwie, nie ukryta)**: pierwsze 3
+  przebiegi z tymi samymi czasami oczekiwania co dotychczas (`boot_wait=8`, `wait 1`/`wait 2`
+  w scenariuszu klikania) dały fałszywy negatyw — "brak paniki" — bo `one-insn-per-tb`
+  drastycznie zwalnia emulację (log serialowy urywał się na "Loaded HELLO.ELF", **bez**
+  drugiego wpisu "Loaded CALC.ELF" — czyli kliknięcie Start→CALC nie zdążyło się wykonać
+  w ogóle, zanim skrypt zakończył scenariusz). Po wydłużeniu czasów oczekiwania
+  (`boot_wait=30`, `wait 8`/`wait 15`) log poprawnie pokazuje oba `ExecAppTask: Loaded`
+  (HELLO, potem CALC) przed panic — potwierdzenie że scenariusz tym razem faktycznie się
+  wykonał.
+  **Wynik (2 poprawne, w pełni wykonane przebiegi pod `one-insn-per-tb`, ten sam dwuklikowy
+  scenariusz z sesji 10-19) — panika WCIĄŻ SIĘ ODTWARZA**, identyczny charakter co w TCG
+  bez tej flagi: Exception 14, mała/bezsensowna wartość `CR2` niezgodna z `RSP`
+  (`RIP 0x400270, CR2 0x311`; `RIP 0x400275, CR2 0x17d9`) — **to OBALA konkretną,
+  zawężoną hipotezę z sesji 9** ("błąd WYMAGA wielu instrukcji we wspólnym tłumaczonym
+  bloku") — bug nie zależy od tej konkretnej optymalizacji TCG. Trzeci przebieg nie dał
+  wyniku rozstrzygającego (timeout 150s zanim kliknięcie CALC się wykonało — sama
+  spowolniona emulacja, nie "przetrwał bez paniki" — odnotowane żeby nie liczyć tego
+  mylnie jako "4. przebieg bez crasha").
+  **Nowy, niezależny od interpretacji `CR2`, obiektywnie weryfikowalny fakt (zdiagnozowany
+  przy tej okazji, dawniej nieodnotowany)**: w obu poprawnych przebiegach zalogowany
+  `RIP` wskazuje na instrukcję, która ARCHITEKTONICZNIE NIE MOŻE spowodować page faultu —
+  `RIP 0x400270` to `cmp $0x270f,%eax` (porównanie rejestru z literałem, zero dostępu do
+  pamięci), `RIP 0x400275` to `jle 400261` (skok warunkowy, też zero dostępu do pamięci)
+  — potwierdzone przez `objdump -d HELLO.ELF` w tej sesji. Oznacza to, że **nie tylko
+  `CR2` bywa błędny — sam zalogowany `RIP` (adres faktycznie wykonywanej instrukcji w
+  chwili faultu) też bywa błędny/przesunięty**, niezależnie od `one-insn-per-tb`. To
+  dopasowuje się do (ale nie potwierdza w 100%) hipotezy "błędne/przesunięte raportowanie
+  który adres instrukcji faktycznie trwał w chwili dostarczenia wyjątku" — mogłoby to być
+  błąd QEMU (niezależnie od granulacji TB) ALBO realna kolizja z przerwaniem timera
+  (PIT, 100 Hz) trafiającym w złym momencie i mieszającym stan jądra — tego dochodzenie
+  w tej sesji nie rozstrzyga, zostawione jako konkretny, nowy punkt wyjścia dla następnej.
+  Weryfikacja: pełny czysty rebuild (`rm -rf build && cmake -B build -S . && cmake --build
+  build`) PASS, `scripts/test_headless.sh` PASS (log dociera do `Ext2: Initialized
+  successfully`, brak panic na zwykłej ścieżce startowej). Repo niezmienione poza tym
+  wpisem i raportem — testowa kopia `scripts/headless_interact_tcgtest.sh` (z dodaną flagą
+  `-accel tcg,one-insn-per-tb=on`) użyta tylko lokalnie, niekomitowana, usunięta przed
+  commitem; `net_dump.pcap` (powstały przy `test_headless.sh`) też usunięty.
+  **Rekomendacja dla Kocurowy96 niezmieniona** (decydujący test to wciąż realny sprzęt/
+  KVM) — ale zawężona teraz o jedną sprawdzoną, obaloną hipotezę (aliasing rejestrów w
+  wieloinstrukcyjnym TB), plus nowy, konkretny trop do zbadania bez potrzeby sprzętu:
+  dlaczego zalogowany `RIP` bywa instrukcją bez dostępu do pamięci — warto sprawdzić czy
+  to koreluje z tickiem PIT (np. tymczasowo wyłączyć `PIT::Init()`/przerwania w trakcie
+  testu i sprawdzić czy bug wciąż się odtwarza bez żadnego zewnętrznego IRQ w tle). Pełny
+  log z tej sesji w `daily-work-report/summary-27-10-26-0819.md`.
 ## Do przegadania
 
 - [ ] **Sieć Faza 7 — syscalle/API żeby userspace mogło używać sieci**. Dziś cały stos
