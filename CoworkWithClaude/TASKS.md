@@ -38,6 +38,8 @@ Do przetestowania w prawdziwym GUI.
 
 ## Do zrobienia teraz
 
+## Do przegadania
+
 - [ ] **Zbadać i naprawić realny kernel panic (page fault) przy odpalaniu apek z Menu Start** —
   zgłoszone 2026-10-09 przez Kocurowy96, prawdziwy crash na WSL2/Windows 11 przez
   `scripts/run.sh` (nie wymyślony scenariusz testowy). Pełny log paniki:
@@ -577,7 +579,57 @@ Do przetestowania w prawdziwym GUI.
   to koreluje z tickiem PIT (np. tymczasowo wyłączyć `PIT::Init()`/przerwania w trakcie
   testu i sprawdzić czy bug wciąż się odtwarza bez żadnego zewnętrznego IRQ w tle). Pełny
   log z tej sesji w `daily-work-report/summary-27-10-26-0819.md`.
-## Do przegadania
+  **Postęp (2026-10-28, sesja automatyczna, 11. i — jak się okazało — ostatnia sesja tej
+  rundy dochodzenia): wykonany zapowiedziany test korelacji z tickiem PIT, z jednoznacznym,
+  decydującym wynikiem.** Najpierw sprawdzone czy dosłowne "wyłączyć PIT::Init()" w ogóle
+  da się przetestować: **okazało się, że NIE** — potwierdzone empirycznie (nie tylko
+  czytaniem kodu), że `Scheduler::Schedule()` jest wołane WYŁĄCZNIE z gałęzi `int_no==32`
+  w `isr_handler` (`kernel/cpu/isr.cpp`) i nigdzie w całym kodzie nie ma żadnego
+  dobrowolnego yieldu — przy w pełni wyłączonym `PIT::Init()` (IRQ0 pozostaje zamaskowane
+  przez `PIC::Init()`) log serialowy z `scripts/test_headless.sh` dochodzi tylko do "GUI
+  and Multitasking initialized" i **tam zatrzymuje się na zawsze** — `ExecAppTask: Loaded
+  HELLO.ELF` nigdy się nie pojawia, bo scheduler nigdy nie przełącza z pętli idle na task
+  0. Zamiast tego przetestowana **zawężona, wykonalna wersja tej samej hipotezy**:
+  `PIT::Init(3)` (3 Hz, ~33× rzadziej niż domyślne 100 Hz) zamiast pełnego wyłączenia —
+  multitasking dalej działa (tylko dużo ospalej), ale liczba okazji na kolizję z tickiem
+  timera w tym samym oknie czasowym scenariusza spada ~33×. **Dwa niezależne odtworzenia
+  tym samym, tanim, dwuklikowym scenariuszem z sesji 10-19 (świeży rozruch, HELLO otwarte,
+  Start → PAINT)** dały **bajt w bajt identyczny wynik jak przy 100 Hz** (i jak w
+  praktycznie wszystkich poprzednich 10 sesjach): `RIP 0x40041e, Error Code 0x4,
+  RSP 0x6fffffffffd0, CS 0x1b, CR2 0x0` — za PIERWSZYM razem w obu przebiegach, bez
+  potrzeby powtórek. **Wniosek: to OBALA hipotezę "kolizja/wyścig z tickiem PIT"** — jeśli
+  błąd wymagałby rzadkiej, niefortunnej zbieżności w czasie dostarczenia przerwania
+  timera z wykonaniem konkretnej instrukcji, 33-krotne zmniejszenie częstotliwości ticków
+  powinno drastycznie zmniejszyć szansę odtworzenia w tym samym, krótkim oknie scenariusza
+  — a tu wynik jest nie tylko wciąż odtwarzalny, ale identyczny co do bitu, co wskazuje że
+  zjawisko dla TEGO konkretnego scenariusza/timingu jest w praktyce deterministyczne, nie
+  zależne od częstotliwości przerwań w tle. Zmiana `PIT::Init(100)` → `PIT::Init(3)` była
+  WYŁĄCZNIE lokalną, testową modyfikacją `kernel/main.cpp` na czas tego eksperymentu —
+  przywrócona do `PIT::Init(100)` przed commitem (`git diff`/`git status` czyste po
+  przywróceniu, zweryfikowane).
+  **Dlaczego to zamyka tę rundę dochodzenia:** to był ostatni, konkretny, wykonalny w tym
+  kontenerze (bez `/dev/kvm`) trop z listy zostawionej przez poprzednie sesje. Po 11
+  sesjach, z kolejno obalonymi hipotezami: przepełnienie stosu jądra, rozjazd TSS.rsp0,
+  nadpisanie CR2 przez zagnieżdżony fault, przekolejkowanie przez kompilator, błędna
+  bramka IDT, CR2 "noise"/dryf po zalogowaniu, brak mapowania kodu HELLO, aliasing
+  rejestrów TCG wymagający wieloinstrukcyjnego TB, a teraz też kolizja z tickiem PIT —
+  **repertuar hipotez testowalnych z poziomu kodu jądra/bez realnego sprzętu jest
+  wyczerpany**. Zbieżne poszlaki (CR2 błędne już w momencie sprzętowego dostarczenia
+  wyjątku, zanim jakikolwiek kod gościa się wykonał — sesja 10-16; CR2 bajt-w-bajt równe
+  RAX z poprzedniej iteracji pętli — sesja 10-26; czasem nawet RIP wskazuje instrukcję
+  bez dostępu do pamięci — sesja 10-27; a teraz niezależność od częstotliwości przerwań)
+  konsekwentnie wskazują na artefakt emulacji TCG w QEMU, nie na błąd w kodzie OxideOS —
+  ale bez testu na realnym sprzęcie/KVM nie da się tego ostatecznie potwierdzić ani
+  odrzucić. **Zgodnie z własnym zapisem zadania** ("ocenić czy da się to naprawić
+  punktowo... zostawić w Do przegadania jeśli się okaże że punktowa poprawka nie
+  wystarczy") — po 11 sesjach bez znalezienia jednego, punktowego miejsca do poprawki w
+  kodzie jądra, i z decydującym testem różnicującym (realny sprzęt/KVM) wymagającym
+  Kocurowy96, przenoszę tę pozycję do "Do przegadania" (niżej) jako kolejny element
+  decyzji o modelu procesów/dalszym kierunku, zamiast powtarzać wyczerpany automatyczny
+  repertuar. Weryfikacja ogólna tej sesji: pełny czysty rebuild PASS, `scripts/test_headless.sh`
+  PASS (normalny rozruch, brak panic) — potwierdzone PO przywróceniu `PIT::Init(100)`.
+  Repo niezmienione poza tym wpisem i raportem. Pełny log z tej sesji w
+  `daily-work-report/summary-28-10-26-*.md`.
 
 - [ ] **Sieć Faza 7 — syscalle/API żeby userspace mogło używać sieci**. Dziś cały stos
   (ARP/IP/ICMP/UDP/DHCP/TCP/HTTP — patrz `docs/networking.md`) żyje tylko w kernelu,
